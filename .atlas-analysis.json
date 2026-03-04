@@ -1,0 +1,240 @@
+{
+  "projectType": "data-platform",
+  "projectName": "Supabase",
+  "projectDescription": "The Postgres development platform - build web, mobile, and AI applications with database, auth, storage, realtime, and edge functions",
+  "theme": "sequoia",
+  "primaryColor": "#3ecf8e",
+  "lightColor": "#327c5c",
+  "darkColor": "#1b1c1c",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/database",
+              "concepts/authentication",
+              "concepts/storage",
+              "concepts/realtime",
+              "concepts/edge-functions",
+              "concepts/ai-vectors"
+            ]
+          },
+          {
+            "group": "Database",
+            "pages": [
+              "database/overview",
+              "database/tables",
+              "database/functions",
+              "database/triggers",
+              "database/extensions",
+              "database/migrations"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "auth/overview",
+              "auth/sign-up",
+              "auth/sign-in",
+              "auth/oauth",
+              "auth/mfa",
+              "auth/row-level-security"
+            ]
+          },
+          {
+            "group": "Storage",
+            "pages": [
+              "storage/overview",
+              "storage/uploads",
+              "storage/downloads",
+              "storage/image-transformations",
+              "storage/access-control"
+            ]
+          },
+          {
+            "group": "Realtime",
+            "pages": [
+              "realtime/overview",
+              "realtime/postgres-changes",
+              "realtime/broadcast",
+              "realtime/presence"
+            ]
+          },
+          {
+            "group": "Edge Functions",
+            "pages": [
+              "functions/overview",
+              "functions/quickstart",
+              "functions/deploy",
+              "functions/environment-variables",
+              "functions/debugging"
+            ]
+          },
+          {
+            "group": "AI & Vectors",
+            "pages": [
+              "ai/overview",
+              "ai/vector-embeddings",
+              "ai/similarity-search",
+              "ai/pgvector"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Platform",
+        "groups": [
+          {
+            "group": "Platform",
+            "pages": [
+              "platform/overview",
+              "platform/projects",
+              "platform/organizations",
+              "platform/billing"
+            ]
+          },
+          {
+            "group": "Self-Hosting",
+            "pages": [
+              "self-hosting/overview",
+              "self-hosting/docker",
+              "self-hosting/configuration",
+              "self-hosting/security",
+              "self-hosting/updates"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "cli/overview",
+              "cli/installation",
+              "cli/local-development",
+              "cli/migrations",
+              "cli/deployment"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/overview",
+              "security/row-level-security",
+              "security/encryption",
+              "security/network"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Client Libraries",
+            "pages": [
+              "api/javascript",
+              "api/python",
+              "api/flutter",
+              "api/swift",
+              "api/kotlin"
+            ]
+          },
+          {
+            "group": "REST API",
+            "pages": [
+              "api/rest/overview",
+              "api/rest/authentication",
+              "api/rest/database",
+              "api/rest/storage",
+              "api/rest/edge-functions"
+            ]
+          },
+          {
+            "group": "GraphQL API",
+            "pages": [
+              "api/graphql/overview",
+              "api/graphql/queries",
+              "api/graphql/mutations"
+            ]
+          },
+          {
+            "group": "Realtime API",
+            "pages": [
+              "api/realtime/overview",
+              "api/realtime/channels",
+              "api/realtime/subscriptions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Tutorials",
+            "pages": [
+              "guides/building-a-todo-app",
+              "guides/user-management",
+              "guides/file-uploads",
+              "guides/realtime-chat"
+            ]
+          },
+          {
+            "group": "Integration Guides",
+            "pages": [
+              "guides/nextjs",
+              "guides/react",
+              "guides/vue",
+              "guides/flutter-app"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/overview",
+              "examples/auth",
+              "examples/database",
+              "examples/storage",
+              "examples/ai"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "PostgreSQL database with extensions (pgvector, PostGIS)",
+    "Authentication & Authorization (JWT, OAuth, MFA)",
+    "Auto-generated REST & GraphQL APIs",
+    "Realtime subscriptions via websockets",
+    "File Storage with S3 compatibility",
+    "Edge Functions with Deno runtime",
+    "AI & Vector embeddings toolkit",
+    "Studio dashboard for management",
+    "Self-hosting with Docker",
+    "CLI for local development"
+  ],
+  "publicApiSurface": [
+    "createClient() - Initialize Supabase client",
+    "supabase.auth - Authentication API",
+    "supabase.from() - Database queries",
+    "supabase.storage - File storage operations",
+    "supabase.realtime - Realtime subscriptions",
+    "supabase.functions.invoke() - Call edge functions",
+    "supabase.rpc() - Call database functions",
+    "REST API endpoints (/rest/v1)",
+    "GraphQL API endpoint (/graphql/v1)",
+    "Storage API endpoints (/storage/v1)",
+    "Auth API endpoints (/auth/v1)",
+    "CLI commands (supabase init, start, deploy, etc.)"
+  ]
+}
