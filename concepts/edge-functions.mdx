@@ -1,0 +1,566 @@
+---
+title: 'Edge Functions'
+description: 'Learn about Supabase Edge Functions - globally distributed TypeScript functions running on Deno for low-latency server-side logic.'
+---
+
+Supabase Edge Functions are server-side TypeScript functions distributed globally at the edge—close to your users. Built on Deno, they provide a portable, TypeScript-first runtime for custom backend logic, webhooks, and API integrations.
+
+## Architecture
+
+Edge Functions run on a globally distributed infrastructure:
+
+1. **Kong Gateway**: Routes requests and validates authentication
+2. **Edge Runtime**: Deno-based runtime executing your function code
+3. **Regional Distribution**: Functions deploy to multiple regions for low latency
+4. **Observability**: Automatic logging and metrics collection
+
+<Tip>
+Edge Functions use the [Supabase Edge Runtime](https://github.com/supabase/edge-runtime), a Deno-compatible runtime that's portable and open source.
+</Tip>
+
+## How Edge Functions Work
+
+When a request arrives:
+
+1. Kong gateway receives the HTTP request
+2. Gateway validates authentication headers and applies rate limits
+3. Request routes to the nearest Edge Runtime node
+4. Edge Runtime executes your function
+5. Function can access Supabase services (Auth, Database, Storage)
+6. Response returns through the gateway to the client
+
+## Creating Functions
+
+### Basic Function
+
+Create a simple HTTP endpoint:
+
+```typescript
+// supabase/functions/hello-world/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+
+serve(async (req) => {
+  const { name } = await req.json()
+  
+  return new Response(
+    JSON.stringify({ message: `Hello ${name}!` }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+Deploy the function:
+
+```bash
+supabase functions deploy hello-world
+```
+
+Invoke from your app:
+
+```typescript
+const { data, error } = await supabase.functions.invoke('hello-world', {
+  body: { name: 'World' }
+})
+
+console.log(data) // { message: 'Hello World!' }
+```
+
+### With Supabase Client
+
+Access Supabase services from your function:
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async (req) => {
+  // Create authenticated Supabase client
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    {
+      global: {
+        headers: { Authorization: req.headers.get('Authorization')! }
+      }
+    }
+  )
+
+  // Get authenticated user
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  
+  if (authError || !user) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+
+  // Query database
+  const { data: posts, error } = await supabase
+    .from('posts')
+    .select('*')
+    .eq('author_id', user.id)
+
+  return new Response(
+    JSON.stringify({ posts }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+### With Database Connection
+
+Connect directly to Postgres:
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { Pool } from 'https://deno.land/x/postgres@v0.17.0/mod.ts'
+
+const pool = new Pool({
+  hostname: Deno.env.get('SUPABASE_DB_HOST'),
+  port: 5432,
+  user: 'postgres',
+  password: Deno.env.get('SUPABASE_DB_PASSWORD'),
+  database: 'postgres',
+  tls: { enabled: true }
+}, 3) // Max 3 connections
+
+serve(async (req) => {
+  const client = await pool.connect()
+  
+  try {
+    const result = await client.queryObject`
+      SELECT * FROM posts ORDER BY created_at DESC LIMIT 10
+    `
+    
+    return new Response(
+      JSON.stringify(result.rows),
+      { headers: { 'Content-Type': 'application/json' } }
+    )
+  } finally {
+    client.release()
+  }
+})
+```
+
+## Common Use Cases
+
+### Webhook Handler
+
+```typescript
+// supabase/functions/stripe-webhook/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import Stripe from 'https://esm.sh/stripe@14.0.0'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
+  apiVersion: '2023-10-16'
+})
+
+serve(async (req) => {
+  const signature = req.headers.get('stripe-signature')!
+  const body = await req.text()
+  
+  try {
+    const event = stripe.webhooks.constructEvent(
+      body,
+      signature,
+      Deno.env.get('STRIPE_WEBHOOK_SECRET')!
+    )
+    
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object
+      // Handle successful payment
+      console.log('Payment successful:', session.id)
+    }
+    
+    return new Response(JSON.stringify({ received: true }), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (err) {
+    return new Response(`Webhook Error: ${err.message}`, { status: 400 })
+  }
+})
+```
+
+### AI/ML Integration
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import OpenAI from 'https://deno.land/x/openai@v4.20.1/mod.ts'
+
+const openai = new OpenAI({
+  apiKey: Deno.env.get('OPENAI_API_KEY')
+})
+
+serve(async (req) => {
+  const { prompt } = await req.json()
+  
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: prompt }]
+  })
+  
+  return new Response(
+    JSON.stringify({ 
+      response: completion.choices[0].message.content 
+    }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+### Image Processing
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async (req) => {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  )
+  
+  const { imagePath } = await req.json()
+  
+  // Download image from Storage
+  const { data: imageData } = await supabase.storage
+    .from('images')
+    .download(imagePath)
+  
+  // Process image (example: convert to grayscale)
+  // ... image processing logic ...
+  
+  // Upload processed image
+  const { data, error } = await supabase.storage
+    .from('images')
+    .upload(`processed/${imagePath}`, processedImage)
+  
+  return new Response(
+    JSON.stringify({ path: data?.path }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+### Scheduled Tasks (with pg_cron)
+
+```sql
+-- Schedule a function to run every hour
+select cron.schedule(
+  'cleanup-old-records',
+  '0 * * * *', -- Every hour at minute 0
+  $$
+  select net.http_post(
+    url := 'https://your-project.supabase.co/functions/v1/cleanup',
+    headers := jsonb_build_object('Authorization', 'Bearer ' || 'YOUR_SERVICE_ROLE_KEY')
+  );
+  $$
+);
+```
+
+```typescript
+// supabase/functions/cleanup/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async (req) => {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  )
+  
+  // Delete records older than 30 days
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  
+  const { data, error } = await supabase
+    .from('temporary_data')
+    .delete()
+    .lt('created_at', thirtyDaysAgo.toISOString())
+  
+  return new Response(
+    JSON.stringify({ deleted: data?.length ?? 0 }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+## Environment Variables
+
+### Setting Secrets
+
+```bash
+# Set a secret
+supabase secrets set OPENAI_API_KEY=sk-...
+
+# Set multiple secrets from .env file
+supabase secrets set --env-file .env.production
+
+# List secrets (values are hidden)
+supabase secrets list
+
+# Unset a secret
+supabase secrets unset OPENAI_API_KEY
+```
+
+### Accessing in Functions
+
+```typescript
+const apiKey = Deno.env.get('OPENAI_API_KEY')
+const supabaseUrl = Deno.env.get('SUPABASE_URL')
+const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+```
+
+### Default Environment Variables
+
+These are automatically available:
+
+- `SUPABASE_URL`: Your project URL
+- `SUPABASE_ANON_KEY`: Anonymous key for client operations
+- `SUPABASE_SERVICE_ROLE_KEY`: Service role key for admin operations
+- `SUPABASE_DB_URL`: Database connection string
+
+## CORS Configuration
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+}
+
+serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+  
+  try {
+    // Your function logic here
+    const data = { message: 'Hello!' }
+    
+    return new Response(
+      JSON.stringify(data),
+      { 
+        headers: { 
+          ...corsHeaders,
+          'Content-Type': 'application/json' 
+        } 
+      }
+    )
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 400,
+        headers: { 
+          ...corsHeaders,
+          'Content-Type': 'application/json' 
+        } 
+      }
+    )
+  }
+})
+```
+
+## Local Development
+
+### Serve Locally
+
+```bash
+# Start all functions
+supabase functions serve
+
+# Start specific function
+supabase functions serve hello-world --env-file .env.local
+
+# With debugging
+supabase functions serve --debug
+```
+
+### Test Functions
+
+```bash
+# Using curl
+curl -i --location --request POST 'http://localhost:54321/functions/v1/hello-world' \
+  --header 'Authorization: Bearer YOUR_ANON_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{"name":"World"}'
+
+# Using Supabase client
+const { data } = await supabase.functions.invoke('hello-world', {
+  body: { name: 'World' }
+})
+```
+
+## Background Tasks
+
+For long-running operations, use background tasks:
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+
+serve(async (req) => {
+  const { task } = await req.json()
+  
+  // Return immediately
+  const response = new Response(
+    JSON.stringify({ task_id: crypto.randomUUID() }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+  
+  // Process in background
+  processTaskInBackground(task)
+  
+  return response
+})
+
+async function processTaskInBackground(task: any) {
+  // Long-running operation
+  await new Promise(resolve => setTimeout(resolve, 10000))
+  
+  // Update status in database
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  )
+  
+  await supabase
+    .from('tasks')
+    .update({ status: 'completed' })
+    .eq('id', task.id)
+}
+```
+
+## Monitoring and Debugging
+
+### Logging
+
+```typescript
+serve(async (req) => {
+  console.log('Request received:', {
+    method: req.method,
+    url: req.url,
+    headers: Object.fromEntries(req.headers)
+  })
+  
+  try {
+    // Function logic
+    console.log('Processing...')
+    
+    return new Response('Success')
+  } catch (error) {
+    console.error('Error:', error)
+    return new Response('Error', { status: 500 })
+  }
+})
+```
+
+### Error Handling
+
+```typescript
+serve(async (req) => {
+  try {
+    const { data } = await req.json()
+    
+    if (!data) {
+      throw new Error('Missing data')
+    }
+    
+    // Process data
+    return new Response(JSON.stringify({ success: true }))
+    
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ 
+        error: error.message,
+        stack: error.stack 
+      }),
+      { 
+        status: 400,
+        headers: { 'Content-Type': 'application/json' } 
+      }
+    )
+  }
+})
+```
+
+## Performance Optimization
+
+### Connection Pooling
+
+```typescript
+// Reuse database connections
+const pool = new Pool(connectionConfig, 3)
+
+serve(async (req) => {
+  const client = await pool.connect()
+  try {
+    // Use connection
+    const result = await client.queryObject`SELECT * FROM posts`
+    return new Response(JSON.stringify(result.rows))
+  } finally {
+    client.release() // Always release
+  }
+})
+```
+
+### Caching
+
+```typescript
+const cache = new Map()
+
+serve(async (req) => {
+  const cacheKey = new URL(req.url).pathname
+  
+  if (cache.has(cacheKey)) {
+    return new Response(cache.get(cacheKey))
+  }
+  
+  const data = await fetchData()
+  cache.set(cacheKey, JSON.stringify(data))
+  
+  return new Response(JSON.stringify(data))
+})
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Keep Functions Small" icon="minimize">
+    Design functions for specific tasks to improve maintainability.
+  </Card>
+  <Card title="Use Service Role Wisely" icon="key">
+    Only use service role key when necessary; prefer user context.
+  </Card>
+  <Card title="Handle Errors Gracefully" icon="circle-exclamation">
+    Always implement proper error handling and return meaningful messages.
+  </Card>
+  <Card title="Monitor Performance" icon="chart-line">
+    Use logging and metrics to track function performance.
+  </Card>
+</CardGroup>
+
+## Limitations
+
+- **Execution time**: 150 seconds maximum
+- **Memory**: 512MB per invocation
+- **Cold starts**: First request may be slower
+- **No persistent storage**: Use Database or Storage for persistence
+- **Limited concurrency**: Design for short-lived operations
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" href="/guides/functions/quickstart" icon="rocket">
+    Get started with your first Edge Function
+  </Card>
+  <Card title="AI Models" href="/guides/functions/ai-models" icon="brain">
+    Integrate AI and ML models
+  </Card>
+  <Card title="Background Tasks" href="/guides/functions/background-tasks" icon="clock">
+    Handle long-running operations
+  </Card>
+  <Card title="Examples" href="https://github.com/supabase/supabase/tree/master/examples/edge-functions" icon="code">
+    Explore example functions
+  </Card>
+</CardGroup>

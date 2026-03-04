@@ -1,0 +1,548 @@
+---
+title: 'Storage API'
+description: 'Store and serve files using the Supabase Storage REST API'
+icon: 'folder'
+---
+
+## Overview
+
+The Supabase Storage API provides RESTful endpoints for managing files in your storage buckets. Upload, download, list, and delete files with simple HTTP requests.
+
+## Base URL
+
+Storage endpoints are available at:
+
+```
+https://<PROJECT_REF>.supabase.co/storage/v1/
+```
+
+## Buckets
+
+### List Buckets
+
+Get all storage buckets.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/storage/v1/bucket' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Response
+
+```json
+[
+  {
+    "id": "avatars",
+    "name": "avatars",
+    "public": true,
+    "created_at": "2024-03-04T10:00:00.000Z",
+    "updated_at": "2024-03-04T10:00:00.000Z"
+  },
+  {
+    "id": "documents",
+    "name": "documents",
+    "public": false,
+    "created_at": "2024-03-04T10:00:00.000Z",
+    "updated_at": "2024-03-04T10:00:00.000Z"
+  }
+]
+```
+
+<ResponseField name="id" type="string">
+  Unique identifier for the bucket.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Bucket name.
+</ResponseField>
+
+<ResponseField name="public" type="boolean">
+  Whether the bucket is publicly accessible.
+</ResponseField>
+
+### Get Bucket
+
+Get details of a specific bucket.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/storage/v1/bucket/avatars' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Create Bucket
+
+Create a new storage bucket.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/bucket' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "avatars",
+    "public": true,
+    "file_size_limit": 52428800,
+    "allowed_mime_types": ["image/png", "image/jpeg"]
+  }'
+```
+
+<ParamField body="name" type="string" required>
+  Unique name for the bucket.
+</ParamField>
+
+<ParamField body="public" type="boolean" default="false">
+  Whether the bucket is publicly accessible.
+</ParamField>
+
+<ParamField body="file_size_limit" type="integer">
+  Maximum file size in bytes (default: 50MB).
+</ParamField>
+
+<ParamField body="allowed_mime_types" type="array">
+  List of allowed MIME types. If null, all types are allowed.
+</ParamField>
+
+### Update Bucket
+
+Update bucket configuration.
+
+```bash
+curl -X PUT 'https://<PROJECT_REF>.supabase.co/storage/v1/bucket/avatars' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "public": false,
+    "file_size_limit": 10485760
+  }'
+```
+
+### Delete Bucket
+
+Delete an empty bucket.
+
+```bash
+curl -X DELETE 'https://<PROJECT_REF>.supabase.co/storage/v1/bucket/avatars' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Empty Bucket
+
+Delete all files in a bucket.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/bucket/avatars/empty' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+## Objects
+
+### Upload File
+
+Upload a file to a storage bucket.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/object/avatars/public/avatar1.png' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: image/png" \
+  -H "cache-control: 3600" \
+  --data-binary '@/path/to/file.png'
+```
+
+<ParamField path="bucket_name" type="string" required>
+  The bucket name (in the URL path).
+</ParamField>
+
+<ParamField path="file_path" type="string" required>
+  The file path within the bucket (in the URL path).
+</ParamField>
+
+<ParamField header="Content-Type" type="string" required>
+  MIME type of the file.
+</ParamField>
+
+<ParamField header="cache-control" type="string">
+  Cache control header value (in seconds).
+</ParamField>
+
+#### Response
+
+```json
+{
+  "Key": "avatars/public/avatar1.png",
+  "Id": "e8c0e3c1-5f3a-4b9e-8f1a-2c3d4e5f6a7b"
+}
+```
+
+### Upload with Upsert
+
+Overwrite existing files by adding the `x-upsert` header.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/object/avatars/public/avatar1.png' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: image/png" \
+  -H "x-upsert: true" \
+  --data-binary '@/path/to/file.png'
+```
+
+<ParamField header="x-upsert" type="boolean">
+  When true, overwrites existing file with the same path.
+</ParamField>
+
+### Download File
+
+Download a file from storage.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/storage/v1/object/avatars/public/avatar1.png' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -o avatar1.png
+```
+
+The file will be downloaded with appropriate caching headers.
+
+### Download with Transformation
+
+Transform images on-the-fly (resize, format conversion).
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/storage/v1/render/image/authenticated/avatars/public/avatar1.png?width=400&height=400&resize=cover&format=webp' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -o avatar1_thumb.webp
+```
+
+<ParamField query="width" type="integer">
+  Width in pixels.
+</ParamField>
+
+<ParamField query="height" type="integer">
+  Height in pixels.
+</ParamField>
+
+<ParamField query="resize" type="string">
+  Resize mode: `cover`, `contain`, `fill`.
+</ParamField>
+
+<ParamField query="format" type="string">
+  Output format: `webp`, `jpeg`, `png`, `avif`.
+</ParamField>
+
+<ParamField query="quality" type="integer">
+  Quality (1-100) for lossy formats.
+</ParamField>
+
+### List Files
+
+List all files in a folder.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/object/list/avatars' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prefix": "public/",
+    "limit": 100,
+    "offset": 0,
+    "sortBy": {"column": "name", "order": "asc"}
+  }'
+```
+
+<ParamField body="prefix" type="string">
+  Folder path to list files from.
+</ParamField>
+
+<ParamField body="limit" type="integer" default="100">
+  Maximum number of files to return.
+</ParamField>
+
+<ParamField body="offset" type="integer" default="0">
+  Number of files to skip.
+</ParamField>
+
+<ParamField body="sortBy" type="object">
+  Sort options.
+  
+  <Expandable title="sortBy properties">
+    <ParamField body="column" type="string">
+      Column to sort by: `name`, `created_at`, `updated_at`.
+    </ParamField>
+    
+    <ParamField body="order" type="string">
+      Sort order: `asc` or `desc`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Response
+
+```json
+[
+  {
+    "name": "avatar1.png",
+    "id": "e8c0e3c1-5f3a-4b9e-8f1a-2c3d4e5f6a7b",
+    "updated_at": "2024-03-04T10:00:00.000Z",
+    "created_at": "2024-03-04T10:00:00.000Z",
+    "last_accessed_at": "2024-03-04T10:00:00.000Z",
+    "metadata": {
+      "eTag": "\"abc123\"",
+      "size": 52428,
+      "mimetype": "image/png",
+      "cacheControl": "max-age=3600"
+    }
+  }
+]
+```
+
+### Search Files
+
+Search for files matching a pattern.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/object/list/avatars' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prefix": "public/",
+    "search": "avatar"
+  }'
+```
+
+<ParamField body="search" type="string">
+  Search term to match against file names.
+</ParamField>
+
+### Move File
+
+Move or rename a file.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/object/move' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bucketId": "avatars",
+    "sourceKey": "public/avatar1.png",
+    "destinationKey": "public/avatars/user123.png"
+  }'
+```
+
+<ParamField body="bucketId" type="string" required>
+  The bucket containing the file.
+</ParamField>
+
+<ParamField body="sourceKey" type="string" required>
+  Current path of the file.
+</ParamField>
+
+<ParamField body="destinationKey" type="string" required>
+  New path for the file.
+</ParamField>
+
+### Copy File
+
+Copy a file to a new location.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/object/copy' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bucketId": "avatars",
+    "sourceKey": "public/avatar1.png",
+    "destinationKey": "public/backup/avatar1.png"
+  }'
+```
+
+### Delete Files
+
+Delete one or more files.
+
+```bash
+curl -X DELETE 'https://<PROJECT_REF>.supabase.co/storage/v1/object/avatars' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prefixes": ["public/avatar1.png", "public/avatar2.png"]
+  }'
+```
+
+<ParamField body="prefixes" type="array" required>
+  Array of file paths to delete.
+</ParamField>
+
+## Public URLs
+
+### Get Public URL
+
+For public buckets, files are accessible via a public URL.
+
+```
+https://<PROJECT_REF>.supabase.co/storage/v1/object/public/avatars/public/avatar1.png
+```
+
+No authentication is required for public bucket files.
+
+### Signed URLs
+
+Create temporary signed URLs for private files.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/object/sign/avatars/private/document.pdf' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expiresIn": 3600
+  }'
+```
+
+<ParamField body="expiresIn" type="integer" required>
+  Time in seconds until the URL expires (max: 604800 = 7 days).
+</ParamField>
+
+#### Response
+
+```json
+{
+  "signedURL": "https://<PROJECT_REF>.supabase.co/storage/v1/object/sign/avatars/private/document.pdf?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+### Create Signed Upload URL
+
+Generate a signed URL for uploading files.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/storage/v1/object/upload/sign/avatars/private/upload.pdf' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expiresIn": 600
+  }'
+```
+
+## Storage Policies
+
+Control access to storage buckets using policies.
+
+### Example Policy (SQL)
+
+```sql
+-- Allow authenticated users to upload to their own folder
+CREATE POLICY "Users can upload to own folder"
+  ON storage.objects
+  FOR INSERT
+  WITH CHECK (
+    bucket_id = 'avatars' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Allow users to read their own files
+CREATE POLICY "Users can read own files"
+  ON storage.objects
+  FOR SELECT
+  USING (
+    bucket_id = 'avatars' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Allow users to delete their own files
+CREATE POLICY "Users can delete own files"
+  ON storage.objects
+  FOR DELETE
+  USING (
+    bucket_id = 'avatars' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+```
+
+## Image Transformations
+
+Supabase Storage supports on-the-fly image transformations:
+
+### Resize
+
+```bash
+# Resize to specific dimensions
+GET /storage/v1/render/image/authenticated/avatars/avatar.png?width=300&height=300
+
+# Resize with different modes
+GET /storage/v1/render/image/authenticated/avatars/avatar.png?width=300&height=300&resize=cover
+GET /storage/v1/render/image/authenticated/avatars/avatar.png?width=300&height=300&resize=contain
+```
+
+### Format Conversion
+
+```bash
+# Convert to WebP
+GET /storage/v1/render/image/authenticated/avatars/avatar.png?format=webp
+
+# Convert to AVIF with quality
+GET /storage/v1/render/image/authenticated/avatars/avatar.png?format=avif&quality=80
+```
+
+### Quality
+
+```bash
+# Set quality for lossy formats (1-100)
+GET /storage/v1/render/image/authenticated/avatars/avatar.jpg?quality=75
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use appropriate bucket types">
+    - Use public buckets for assets that don't need authentication
+    - Use private buckets with RLS for user-specific files
+  </Accordion>
+  
+  <Accordion title="Implement file size limits">
+    Set appropriate file size limits on your buckets:
+    
+    ```json
+    {"file_size_limit": 10485760} // 10MB
+    ```
+  </Accordion>
+  
+  <Accordion title="Use image transformations">
+    Transform images on-the-fly to reduce bandwidth and improve performance.
+  </Accordion>
+  
+  <Accordion title="Implement proper RLS policies">
+    Always use Row Level Security policies to control file access:
+    
+    ```sql
+    ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+    ```
+  </Accordion>
+  
+  <Accordion title="Use signed URLs for temporary access">
+    Generate short-lived signed URLs for secure temporary access to private files.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Edge Functions" icon="bolt" href="/api/rest/edge-functions">
+    Learn about serverless functions
+  </Card>
+  
+  <Card title="Client Libraries" icon="code" href="/api/javascript">
+    Use Storage with client SDKs
+  </Card>
+</CardGroup>

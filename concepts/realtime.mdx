@@ -1,0 +1,596 @@
+---
+title: 'Realtime'
+description: 'Learn about Supabase Realtime - a globally distributed system for real-time messaging, presence tracking, and database change subscriptions.'
+---
+
+Supabase Realtime is a globally distributed service that enables real-time communication between clients. Built on Elixir and Phoenix Channels, it provides low-latency messaging, user presence tracking, and database change notifications.
+
+## Architecture
+
+Realtime consists of several key components:
+
+- **WebSocket Server**: Elixir-based server handling persistent connections
+- **Postgres Replication**: Listens to database changes via logical replication
+- **Phoenix Channels**: Manages pub/sub messaging and presence
+- **Global Distribution**: Servers deployed across multiple regions for low latency
+- **Authorization**: Integrates with Supabase Auth and RLS policies
+
+<Tip>
+Realtime can handle millions of concurrent connections and is designed for horizontal scaling.
+</Tip>
+
+## Core Features
+
+Realtime provides three main features:
+
+### 1. Broadcast
+
+Send and receive low-latency messages between clients.
+
+**Use cases**: Chat messages, cursor tracking, collaborative editing, game events
+
+### 2. Presence
+
+Track and synchronize user state across clients.
+
+**Use cases**: Online user lists, typing indicators, active participants
+
+### 3. Postgres Changes
+
+Listen to database changes in real-time.
+
+**Use cases**: Live data updates, notification systems, activity feeds
+
+## Broadcast
+
+Broadcast enables low-latency messaging between connected clients:
+
+### Basic Broadcast
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(supabaseUrl, supabaseKey)
+
+// Create a channel
+const channel = supabase.channel('room-1')
+
+// Subscribe to broadcast messages
+channel
+  .on('broadcast', { event: 'cursor-pos' }, (payload) => {
+    console.log('Cursor moved:', payload)
+  })
+  .subscribe()
+
+// Send a broadcast message
+channel.send({
+  type: 'broadcast',
+  event: 'cursor-pos',
+  payload: { x: 100, y: 200 }
+})
+```
+
+### Chat Application
+
+```typescript
+const channel = supabase.channel('chat-room')
+
+// Listen for messages
+channel
+  .on('broadcast', { event: 'message' }, ({ payload }) => {
+    displayMessage(payload)
+  })
+  .subscribe()
+
+// Send a message
+function sendMessage(text: string) {
+  channel.send({
+    type: 'broadcast',
+    event: 'message',
+    payload: {
+      user: currentUser,
+      text: text,
+      timestamp: new Date().toISOString()
+    }
+  })
+}
+```
+
+### Collaborative Cursors
+
+```typescript
+const channel = supabase.channel('document:123')
+
+channel
+  .on('broadcast', { event: 'cursor' }, ({ payload }) => {
+    updateCursor(payload.userId, payload.x, payload.y)
+  })
+  .subscribe()
+
+// Track mouse movement
+document.addEventListener('mousemove', (e) => {
+  channel.send({
+    type: 'broadcast',
+    event: 'cursor',
+    payload: {
+      userId: currentUser.id,
+      x: e.clientX,
+      y: e.clientY
+    }
+  })
+})
+```
+
+### Broadcast from Database
+
+Trigger broadcasts directly from PostgreSQL:
+
+```sql
+-- Create a function to broadcast messages
+create or replace function broadcast_message()
+returns trigger
+language plpgsql
+as $$
+begin
+  perform realtime.send(
+    jsonb_build_object(
+      'event', 'new_message',
+      'payload', row_to_json(new)
+    ),
+    'message',
+    'chat-room',
+    false -- public (true = private)
+  );
+  return new;
+end;
+$$;
+
+-- Attach trigger to table
+create trigger on_message_created
+  after insert on messages
+  for each row
+  execute function broadcast_message();
+```
+
+## Presence
+
+Presence tracks and synchronizes user state across all connected clients:
+
+### Basic Presence
+
+```typescript
+const channel = supabase.channel('room-1')
+
+// Track presence state
+const presenceState = channel.track({
+  user_id: user.id,
+  username: user.username,
+  online_at: new Date().toISOString()
+})
+
+// Listen for presence changes
+channel
+  .on('presence', { event: 'sync' }, () => {
+    const state = channel.presenceState()
+    console.log('Online users:', state)
+  })
+  .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+    console.log('User joined:', newPresences)
+  })
+  .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+    console.log('User left:', leftPresences)
+  })
+  .subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await presenceState
+    }
+  })
+```
+
+### Online User List
+
+```typescript
+const channel = supabase.channel('lobby')
+
+channel
+  .on('presence', { event: 'sync' }, () => {
+    const state = channel.presenceState()
+    const users = Object.keys(state).map(key => state[key][0])
+    
+    displayOnlineUsers(users)
+  })
+  .subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await channel.track({
+        user_id: currentUser.id,
+        username: currentUser.username,
+        avatar_url: currentUser.avatar_url,
+        status: 'online'
+      })
+    }
+  })
+```
+
+### Typing Indicators
+
+```typescript
+const channel = supabase.channel('chat-room')
+let typingTimeout: NodeJS.Timeout
+
+channel
+  .on('presence', { event: 'sync' }, () => {
+    const state = channel.presenceState()
+    const typingUsers = Object.keys(state)
+      .map(key => state[key][0])
+      .filter(user => user.typing && user.user_id !== currentUser.id)
+    
+    displayTypingIndicator(typingUsers)
+  })
+  .subscribe()
+
+// Update typing status
+input.addEventListener('input', async () => {
+  await channel.track({ ...currentUser, typing: true })
+  
+  clearTimeout(typingTimeout)
+  typingTimeout = setTimeout(async () => {
+    await channel.track({ ...currentUser, typing: false })
+  }, 1000)
+})
+```
+
+## Postgres Changes
+
+Subscribe to database changes in real-time:
+
+### Listen to All Changes
+
+```typescript
+const channel = supabase
+  .channel('db-changes')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'posts' },
+    (payload) => {
+      console.log('Change received:', payload)
+    }
+  )
+  .subscribe()
+```
+
+### Listen to Inserts
+
+```typescript
+const channel = supabase
+  .channel('new-posts')
+  .on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'posts' },
+    (payload) => {
+      console.log('New post:', payload.new)
+      addPostToUI(payload.new)
+    }
+  )
+  .subscribe()
+```
+
+### Listen to Updates
+
+```typescript
+const channel = supabase
+  .channel('post-updates')
+  .on(
+    'postgres_changes',
+    { event: 'UPDATE', schema: 'public', table: 'posts' },
+    (payload) => {
+      console.log('Updated post:', payload.new)
+      console.log('Old values:', payload.old)
+      updatePostInUI(payload.new)
+    }
+  )
+  .subscribe()
+```
+
+### Listen to Deletes
+
+```typescript
+const channel = supabase
+  .channel('post-deletes')
+  .on(
+    'postgres_changes',
+    { event: 'DELETE', schema: 'public', table: 'posts' },
+    (payload) => {
+      console.log('Deleted post:', payload.old)
+      removePostFromUI(payload.old.id)
+    }
+  )
+  .subscribe()
+```
+
+### Filter by Column Values
+
+```typescript
+// Listen to changes for specific user
+const channel = supabase
+  .channel('my-posts')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'posts',
+      filter: `author_id=eq.${user.id}`
+    },
+    (payload) => {
+      console.log('My post changed:', payload)
+    }
+  )
+  .subscribe()
+```
+
+### Multiple Subscriptions
+
+```typescript
+const channel = supabase
+  .channel('multi-changes')
+  .on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'posts' },
+    handleNewPost
+  )
+  .on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'comments' },
+    handleNewComment
+  )
+  .on(
+    'postgres_changes',
+    { event: 'UPDATE', schema: 'public', table: 'posts' },
+    handleUpdatedPost
+  )
+  .subscribe()
+```
+
+## Channel Management
+
+### Channel States
+
+```typescript
+const channel = supabase.channel('room-1')
+
+channel.subscribe((status) => {
+  switch (status) {
+    case 'SUBSCRIBED':
+      console.log('Connected!')
+      break
+    case 'CHANNEL_ERROR':
+      console.log('Channel error')
+      break
+    case 'TIMED_OUT':
+      console.log('Connection timed out')
+      break
+    case 'CLOSED':
+      console.log('Connection closed')
+      break
+  }
+})
+```
+
+### Unsubscribing
+
+```typescript
+// Unsubscribe from a channel
+await channel.unsubscribe()
+
+// Remove all channels
+await supabase.removeAllChannels()
+
+// Remove a specific channel
+await supabase.removeChannel(channel)
+```
+
+## Authorization
+
+### RLS Policies for Realtime
+
+Realtime respects Row Level Security policies:
+
+```sql
+-- Only allow users to receive their own messages
+create policy "Users can read own messages"
+  on messages for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+-- Realtime will automatically filter changes based on this policy
+```
+
+### Private Channels
+
+```typescript
+// Require authentication for channel access
+const channel = supabase.channel('private-room', {
+  config: {
+    broadcast: { self: true },
+    presence: { key: user.id }
+  }
+})
+```
+
+### Custom Authorization
+
+```sql
+-- Create a function to check channel access
+create or replace function authorize_channel(
+  requested_channel text,
+  user_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+as $$
+begin
+  -- Custom authorization logic
+  return exists (
+    select 1
+    from channel_members
+    where channel = requested_channel
+    and member_id = user_id
+  );
+end;
+$$;
+```
+
+## Performance Optimization
+
+### Throttling Updates
+
+```typescript
+import { debounce } from 'lodash'
+
+const sendCursorUpdate = debounce((x, y) => {
+  channel.send({
+    type: 'broadcast',
+    event: 'cursor',
+    payload: { x, y }
+  })
+}, 50) // Max 20 updates per second
+
+document.addEventListener('mousemove', (e) => {
+  sendCursorUpdate(e.clientX, e.clientY)
+})
+```
+
+### Connection Pooling
+
+```typescript
+// Reuse channels when possible
+const channels = new Map()
+
+function getChannel(name: string) {
+  if (!channels.has(name)) {
+    channels.set(name, supabase.channel(name))
+  }
+  return channels.get(name)
+}
+```
+
+### Selective Subscriptions
+
+```typescript
+// Only subscribe to relevant data
+const channel = supabase
+  .channel('posts')
+  .on(
+    'postgres_changes',
+    {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'posts',
+      filter: `category=eq.${currentCategory}`
+    },
+    handleNewPost
+  )
+  .subscribe()
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Filters" icon="filter">
+    Filter subscriptions to reduce unnecessary data transfer.
+  </Card>
+  <Card title="Throttle Updates" icon="gauge">
+    Debounce high-frequency events to prevent overwhelming clients.
+  </Card>
+  <Card title="Clean Up" icon="broom">
+    Always unsubscribe from channels when components unmount.
+  </Card>
+  <Card title="Handle Errors" icon="triangle-exclamation">
+    Implement proper error handling and reconnection logic.
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Live Query
+
+```typescript
+function useLivePosts() {
+  const [posts, setPosts] = useState([])
+
+  useEffect(() => {
+    // Initial fetch
+    supabase
+      .from('posts')
+      .select('*')
+      .then(({ data }) => setPosts(data))
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('posts')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'posts' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setPosts(prev => [...prev, payload.new])
+          } else if (payload.eventType === 'UPDATE') {
+            setPosts(prev => prev.map(p => 
+              p.id === payload.new.id ? payload.new : p
+            ))
+          } else if (payload.eventType === 'DELETE') {
+            setPosts(prev => prev.filter(p => p.id !== payload.old.id))
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [])
+
+  return posts
+}
+```
+
+### Optimistic Updates
+
+```typescript
+async function updatePost(id: number, updates: any) {
+  // Update UI immediately
+  setPosts(prev => prev.map(p => 
+    p.id === id ? { ...p, ...updates } : p
+  ))
+
+  // Persist to database
+  const { error } = await supabase
+    .from('posts')
+    .update(updates)
+    .eq('id', id)
+
+  // Realtime will sync the change across all clients
+  if (error) {
+    // Revert on error
+    console.error('Update failed:', error)
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Broadcast" href="/guides/realtime/broadcast" icon="tower-broadcast">
+    Learn about low-latency messaging
+  </Card>
+  <Card title="Presence" href="/guides/realtime/presence" icon="users">
+    Track user state across clients
+  </Card>
+  <Card title="Postgres Changes" href="/guides/realtime/postgres-changes" icon="database">
+    Subscribe to database changes
+  </Card>
+  <Card title="Authorization" href="/guides/realtime/authorization" icon="lock">
+    Secure your real-time channels
+  </Card>
+</CardGroup>

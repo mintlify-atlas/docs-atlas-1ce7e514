@@ -1,0 +1,722 @@
+---
+title: 'Debugging Edge Functions'
+description: 'Debug, monitor, and troubleshoot Supabase Edge Functions'
+---
+
+## Overview
+
+Debugging Edge Functions involves viewing logs, testing locally, handling errors, and monitoring performance. This guide covers tools and techniques to help you identify and fix issues quickly.
+
+## Viewing Logs
+
+### CLI Logs
+
+View real-time logs for a function:
+
+```bash
+supabase functions logs hello-world
+```
+
+View logs with tail:
+
+```bash
+supabase functions logs hello-world --tail
+```
+
+This streams logs in real-time as requests come in.
+
+### Filter Logs
+
+Filter logs by time range:
+
+```bash
+# Last hour
+supabase functions logs hello-world --since 1h
+
+# Last 30 minutes
+supabase functions logs hello-world --since 30m
+
+# Last 500 lines
+supabase functions logs hello-world --limit 500
+```
+
+### Dashboard Logs
+
+View logs in the Supabase Dashboard:
+
+1. Go to **Edge Functions** in your project
+2. Click on your function
+3. Navigate to the **Logs** tab
+
+The dashboard provides:
+- Searchable logs
+- Log level filtering (info, warn, error)
+- Request/response inspection
+- Performance metrics
+
+## Local Development
+
+### Serve Locally
+
+Run functions locally for easier debugging:
+
+```bash
+supabase functions serve hello-world
+```
+
+With environment variables:
+
+```bash
+supabase functions serve hello-world --env-file ./supabase/.env.local
+```
+
+Skip JWT verification for testing:
+
+```bash
+supabase functions serve hello-world --no-verify-jwt
+```
+
+### Hot Reload
+
+Changes are automatically reloaded when you save files:
+
+```bash
+supabase functions serve hello-world
+# Edit index.ts
+# Save file
+# Function automatically reloads
+```
+
+### Debug with Deno
+
+Use Deno's built-in debugger:
+
+```bash
+deno run --inspect-brk --allow-all supabase/functions/hello-world/index.ts
+```
+
+Then connect with Chrome DevTools:
+
+1. Open `chrome://inspect` in Chrome
+2. Click "inspect" under your function
+3. Set breakpoints and step through code
+
+## Console Logging
+
+### Basic Logging
+
+Use `console.log()` for debugging:
+
+```typescript
+Deno.serve(async (req) => {
+  console.log('Function invoked')
+  
+  const { name } = await req.json()
+  console.log('Received name:', name)
+  
+  const response = { message: `Hello ${name}!` }
+  console.log('Sending response:', response)
+  
+  return new Response(JSON.stringify(response))
+})
+```
+
+### Log Levels
+
+Use different log levels:
+
+```typescript
+Deno.serve(async (req) => {
+  console.log('Info: Function started')
+  console.warn('Warning: Deprecated parameter used')
+  console.error('Error: Failed to process request')
+  
+  try {
+    const data = await processRequest(req)
+    return new Response(JSON.stringify(data))
+  } catch (error) {
+    console.error('Error details:', error)
+    return new Response('Internal error', { status: 500 })
+  }
+})
+```
+
+### Structured Logging
+
+Log structured data for better analysis:
+
+```typescript
+Deno.serve(async (req) => {
+  const requestId = crypto.randomUUID()
+  
+  console.log(JSON.stringify({
+    level: 'info',
+    requestId,
+    timestamp: new Date().toISOString(),
+    message: 'Request received',
+    method: req.method,
+    url: req.url
+  }))
+  
+  try {
+    const result = await processRequest(req)
+    
+    console.log(JSON.stringify({
+      level: 'info',
+      requestId,
+      message: 'Request completed',
+      duration: performance.now()
+    }))
+    
+    return new Response(JSON.stringify(result))
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      requestId,
+      message: 'Request failed',
+      error: error.message,
+      stack: error.stack
+    }))
+    
+    return new Response('Error', { status: 500 })
+  }
+})
+```
+
+## Error Handling
+
+### Try-Catch Blocks
+
+Always wrap async operations:
+
+```typescript
+Deno.serve(async (req) => {
+  try {
+    const { data } = await req.json()
+    
+    // Validate input
+    if (!data) {
+      throw new Error('Missing data field')
+    }
+    
+    // Process request
+    const result = await processData(data)
+    
+    return new Response(JSON.stringify(result), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('Error:', error)
+    
+    return new Response(
+      JSON.stringify({
+        error: error.message,
+        timestamp: new Date().toISOString()
+      }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    )
+  }
+})
+```
+
+### Custom Error Classes
+
+Create custom error types:
+
+```typescript
+class ValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ValidationError'
+  }
+}
+
+class AuthenticationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AuthenticationError'
+  }
+}
+
+Deno.serve(async (req) => {
+  try {
+    const { data } = await req.json()
+    
+    if (!data.email) {
+      throw new ValidationError('Email is required')
+    }
+    
+    const user = await authenticateUser(data.email)
+    if (!user) {
+      throw new AuthenticationError('Invalid credentials')
+    }
+    
+    return new Response(JSON.stringify({ user }))
+  } catch (error) {
+    console.error(`${error.name}: ${error.message}`)
+    
+    if (error instanceof ValidationError) {
+      return new Response(
+        JSON.stringify({ error: error.message }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+    
+    if (error instanceof AuthenticationError) {
+      return new Response(
+        JSON.stringify({ error: error.message }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+    
+    return new Response(
+      JSON.stringify({ error: 'Internal server error' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+})
+```
+
+### Error Response Helper
+
+Create a reusable error handler:
+
+```typescript
+function errorResponse(error: Error, status: number = 500) {
+  console.error(`Error [${status}]:`, error.message)
+  
+  return new Response(
+    JSON.stringify({
+      error: error.message,
+      timestamp: new Date().toISOString()
+    }),
+    {
+      status,
+      headers: { 'Content-Type': 'application/json' }
+    }
+  )
+}
+
+Deno.serve(async (req) => {
+  try {
+    const result = await processRequest(req)
+    return new Response(JSON.stringify(result))
+  } catch (error) {
+    if (error.message.includes('validation')) {
+      return errorResponse(error, 400)
+    }
+    if (error.message.includes('unauthorized')) {
+      return errorResponse(error, 401)
+    }
+    return errorResponse(error, 500)
+  }
+})
+```
+
+## Testing Functions
+
+### Manual Testing with curl
+
+Test locally:
+
+```bash
+curl -L -X POST 'http://localhost:54321/functions/v1/hello-world' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24ifQ.625_WdcF3KHqz5amU0x2X5WWHP-OEs_4qj0ssLNHzTs' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Test"}'
+```
+
+Test production:
+
+```bash
+curl -L -X POST 'https://your-project.supabase.co/functions/v1/hello-world' \
+  -H 'Authorization: Bearer YOUR_ANON_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Test"}'
+```
+
+### Automated Tests
+
+Create test files:
+
+```typescript
+// supabase/functions/hello-world/hello-world.test.ts
+import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts'
+import { createClient } from 'npm:supabase-js@2'
+
+Deno.test('hello-world returns greeting', async () => {
+  const supabase = createClient(
+    'http://localhost:54321',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24ifQ.625_WdcF3KHqz5amU0x2X5WWHP-OEs_4qj0ssLNHzTs'
+  )
+
+  const { data, error } = await supabase.functions.invoke('hello-world', {
+    body: { name: 'Deno' }
+  })
+
+  assertEquals(error, null)
+  assertEquals(data.message, 'Hello Deno!')
+})
+
+Deno.test('hello-world handles missing name', async () => {
+  const supabase = createClient(
+    'http://localhost:54321',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24ifQ.625_WdcF3KHqz5amU0x2X5WWHP-OEs_4qj0ssLNHzTs'
+  )
+
+  const { data, error } = await supabase.functions.invoke('hello-world', {
+    body: {}
+  })
+
+  assertEquals(error, null)
+  assertEquals(data.message, 'Hello undefined!')
+})
+```
+
+Run tests:
+
+```bash
+# Start functions locally
+supabase functions serve hello-world
+
+# Run tests in another terminal
+deno test --allow-all supabase/functions/hello-world/hello-world.test.ts
+```
+
+### Integration Tests
+
+Test with database interactions:
+
+```typescript
+import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts'
+import { createClient } from 'npm:supabase-js@2'
+
+Deno.test('create-user creates user in database', async () => {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  )
+
+  // Call function
+  const { data: functionData, error: functionError } = await supabase.functions.invoke(
+    'create-user',
+    { body: { email: 'test@example.com', name: 'Test User' } }
+  )
+
+  assertEquals(functionError, null)
+  assertEquals(functionData.success, true)
+
+  // Verify in database
+  const { data: userData, error: dbError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', 'test@example.com')
+    .single()
+
+  assertEquals(dbError, null)
+  assertEquals(userData.name, 'Test User')
+
+  // Cleanup
+  await supabase.from('users').delete().eq('email', 'test@example.com')
+})
+```
+
+## Performance Monitoring
+
+### Measure Execution Time
+
+Track function performance:
+
+```typescript
+Deno.serve(async (req) => {
+  const startTime = performance.now()
+  
+  try {
+    const result = await processRequest(req)
+    
+    const duration = performance.now() - startTime
+    console.log(`Request completed in ${duration.toFixed(2)}ms`)
+    
+    return new Response(
+      JSON.stringify(result),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Execution-Time': `${duration}ms`
+        }
+      }
+    )
+  } catch (error) {
+    const duration = performance.now() - startTime
+    console.error(`Request failed after ${duration.toFixed(2)}ms:`, error)
+    
+    return new Response('Error', { status: 500 })
+  }
+})
+```
+
+### Profile Slow Operations
+
+Identify bottlenecks:
+
+```typescript
+Deno.serve(async (req) => {
+  const timings: Record<string, number> = {}
+  
+  const startTime = performance.now()
+  
+  // Database query
+  const dbStart = performance.now()
+  const data = await fetchFromDatabase()
+  timings.database = performance.now() - dbStart
+  
+  // External API call
+  const apiStart = performance.now()
+  const apiData = await callExternalAPI()
+  timings.api = performance.now() - apiStart
+  
+  // Processing
+  const processStart = performance.now()
+  const result = processData(data, apiData)
+  timings.processing = performance.now() - processStart
+  
+  timings.total = performance.now() - startTime
+  
+  console.log('Performance timings:', timings)
+  
+  return new Response(JSON.stringify(result))
+})
+```
+
+### Memory Usage
+
+Monitor memory usage:
+
+```typescript
+Deno.serve(async (req) => {
+  const memoryBefore = Deno.memoryUsage()
+  
+  const result = await processLargeDataset()
+  
+  const memoryAfter = Deno.memoryUsage()
+  const memoryUsed = (memoryAfter.heapUsed - memoryBefore.heapUsed) / 1024 / 1024
+  
+  console.log(`Memory used: ${memoryUsed.toFixed(2)} MB`)
+  
+  return new Response(JSON.stringify(result))
+})
+```
+
+## Common Issues
+
+### Function Timeout
+
+If functions timeout:
+
+1. **Check execution time limits**:
+   - Free tier: 10 seconds
+   - Pro tier: 150 seconds
+
+2. **Optimize slow operations**:
+   ```typescript
+   // Bad: Sequential API calls
+   const data1 = await fetch(url1).then(r => r.json())
+   const data2 = await fetch(url2).then(r => r.json())
+   const data3 = await fetch(url3).then(r => r.json()
+   
+   // Good: Parallel API calls
+   const [data1, data2, data3] = await Promise.all([
+     fetch(url1).then(r => r.json()),
+     fetch(url2).then(r => r.json()),
+     fetch(url3).then(r => r.json())
+   ])
+   ```
+
+3. **Use streaming for large responses**
+
+### CORS Errors
+
+Fix CORS issues:
+
+```typescript
+import { corsHeaders } from 'jsr:@supabase/supabase-js@2/cors'
+
+Deno.serve(async (req) => {
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    const data = await processRequest(req)
+    
+    return new Response(
+      JSON.stringify(data),
+      {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      }
+    )
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      }
+    )
+  }
+})
+```
+
+### Authentication Errors
+
+Debug auth issues:
+
+```typescript
+import { createClient } from 'npm:supabase-js@2'
+
+Deno.serve(async (req) => {
+  const authHeader = req.headers.get('Authorization')
+  console.log('Auth header:', authHeader ? 'Present' : 'Missing')
+  
+  const supabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    {
+      global: {
+        headers: { Authorization: authHeader! }
+      }
+    }
+  )
+
+  const { data: { user }, error } = await supabaseClient.auth.getUser()
+  
+  if (error) {
+    console.error('Auth error:', error)
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized', details: error.message }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+  
+  console.log('Authenticated user:', user.id)
+  
+  return new Response(JSON.stringify({ userId: user.id }))
+})
+```
+
+### Cold Starts
+
+Minimize cold start latency:
+
+1. **Keep functions small** - Remove unnecessary dependencies
+2. **Lazy load modules** - Import only when needed
+3. **Cache expensive operations** - Use module-level caching
+
+```typescript
+// Cache expensive initialization
+let openaiClient: OpenAI | null = null
+
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: Deno.env.get('OPENAI_API_KEY')
+    })
+  }
+  return openaiClient
+}
+
+Deno.serve(async (req) => {
+  const client = getOpenAIClient()
+  // Use cached client
+})
+```
+
+## Monitoring Tools
+
+### Dashboard Metrics
+
+View metrics in the Dashboard:
+
+1. Go to **Edge Functions** > Your function
+2. Check the **Metrics** tab for:
+   - Invocation count
+   - Error rate
+   - Average execution time
+   - Memory usage
+
+### Custom Monitoring
+
+Send metrics to external services:
+
+```typescript
+Deno.serve(async (req) => {
+  const startTime = performance.now()
+  const requestId = crypto.randomUUID()
+  
+  try {
+    const result = await processRequest(req)
+    const duration = performance.now() - startTime
+    
+    // Send success metric
+    await sendMetric({
+      name: 'function.invocation',
+      value: 1,
+      tags: { status: 'success', requestId },
+      duration
+    })
+    
+    return new Response(JSON.stringify(result))
+  } catch (error) {
+    const duration = performance.now() - startTime
+    
+    // Send error metric
+    await sendMetric({
+      name: 'function.invocation',
+      value: 1,
+      tags: { status: 'error', requestId },
+      duration,
+      error: error.message
+    })
+    
+    return new Response('Error', { status: 500 })
+  }
+})
+```
+
+## Best Practices
+
+1. **Use structured logging** for easier analysis
+2. **Add request IDs** to trace requests through logs
+3. **Handle errors gracefully** with proper status codes
+4. **Test locally first** before deploying
+5. **Monitor performance** regularly
+6. **Set up alerts** for error rates
+7. **Use version control** to track changes
+8. **Document function behavior** for your team
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy Functions" icon="upload" href="/functions/deploy">
+    Learn deployment strategies and CI/CD
+  </Card>
+  <Card title="Environment Variables" icon="key" href="/functions/environment-variables">
+    Manage secrets and configuration
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Supabase CLI Reference](https://supabase.com/docs/reference/cli)
+- [Deno Debugging](https://deno.land/manual/tools/debugger)
+- [Edge Functions Examples](https://github.com/supabase/supabase/tree/master/examples/edge-functions)

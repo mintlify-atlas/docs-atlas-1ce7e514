@@ -1,0 +1,520 @@
+---
+title: 'JavaScript SDK'
+description: 'Complete reference for the Supabase JavaScript client library'
+icon: 'js'
+---
+
+## Installation
+
+Install the Supabase JavaScript client library:
+
+```bash
+npm install @supabase/supabase-js
+```
+
+## Initializing
+
+Create a single supabase client for interacting with your database.
+
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_ANON_KEY
+const supabase = createClient(supabaseUrl, supabaseKey)
+```
+
+<ParamField path="supabaseUrl" type="string" required>
+  The unique Supabase URL for your project.
+</ParamField>
+
+<ParamField path="supabaseKey" type="string" required>
+  The Supabase anon key or service role key for your project.
+</ParamField>
+
+<ParamField path="options" type="object">
+  Optional configuration parameters.
+  
+  <Expandable title="options properties">
+    <ParamField path="auth" type="object">
+      Authentication options.
+      
+      <Expandable title="auth properties">
+        <ParamField path="autoRefreshToken" type="boolean" default="true">
+          Automatically refresh the token before expiring.
+        </ParamField>
+        
+        <ParamField path="persistSession" type="boolean" default="true">
+          Whether to persist the user session to local storage.
+        </ParamField>
+        
+        <ParamField path="detectSessionInUrl" type="boolean" default="true">
+          Detect OAuth grants in the URL and sign in automatically.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+    
+    <ParamField path="realtime" type="object">
+      Realtime options.
+      
+      <Expandable title="realtime properties">
+        <ParamField path="params" type="object">
+          Custom parameters to pass to the Realtime connection.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+    
+    <ParamField path="global" type="object">
+      Global configuration options.
+      
+      <Expandable title="global properties">
+        <ParamField path="headers" type="object">
+          Custom headers to send with every request.
+        </ParamField>
+        
+        <ParamField path="fetch" type="function">
+          Custom fetch implementation.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Database Operations
+
+### Select Data
+
+Query data from your tables.
+
+```javascript
+const { data, error } = await supabase
+  .from('countries')
+  .select('*')
+```
+
+<ResponseField name="data" type="array">
+  The returned rows from the query.
+</ResponseField>
+
+<ResponseField name="error" type="PostgrestError | null">
+  Error object if the query failed, null otherwise.
+</ResponseField>
+
+#### Select with Filters
+
+```javascript
+const { data, error } = await supabase
+  .from('countries')
+  .select('name, capital')
+  .eq('id', 1)
+  .single()
+```
+
+#### Select with Joins
+
+```javascript
+const { data, error } = await supabase
+  .from('countries')
+  .select(`
+    name,
+    cities (
+      name,
+      population
+    )
+  `)
+```
+
+### Insert Data
+
+Insert rows into your tables.
+
+```javascript
+const { data, error } = await supabase
+  .from('countries')
+  .insert([
+    { name: 'Denmark', code: 'DK' },
+    { name: 'Norway', code: 'NO' }
+  ])
+  .select()
+```
+
+<ParamField path="values" type="object | array" required>
+  The values to insert. Can be a single object or an array of objects.
+</ParamField>
+
+<ResponseField name="data" type="array">
+  The inserted rows (if `.select()` is used).
+</ResponseField>
+
+<ResponseField name="error" type="PostgrestError | null">
+  Error object if the insert failed, null otherwise.
+</ResponseField>
+
+### Update Data
+
+Update existing rows in your tables.
+
+```javascript
+const { data, error } = await supabase
+  .from('countries')
+  .update({ name: 'Australia' })
+  .eq('id', 1)
+  .select()
+```
+
+<ParamField path="values" type="object" required>
+  The values to update.
+</ParamField>
+
+### Upsert Data
+
+Insert or update rows based on unique constraints.
+
+```javascript
+const { data, error } = await supabase
+  .from('countries')
+  .upsert({ id: 1, name: 'Australia' })
+  .select()
+```
+
+### Delete Data
+
+Delete rows from your tables.
+
+```javascript
+const { data, error } = await supabase
+  .from('countries')
+  .delete()
+  .eq('id', 1)
+```
+
+## Authentication
+
+### Sign Up
+
+Create a new user account.
+
+```javascript
+const { data, error } = await supabase.auth.signUp({
+  email: 'example@email.com',
+  password: 'example-password',
+})
+```
+
+<ParamField path="email" type="string" required>
+  The user's email address.
+</ParamField>
+
+<ParamField path="password" type="string" required>
+  The user's password.
+</ParamField>
+
+<ParamField path="options" type="object">
+  Optional parameters.
+  
+  <Expandable title="options properties">
+    <ParamField path="data" type="object">
+      Additional user metadata.
+    </ParamField>
+    
+    <ParamField path="emailRedirectTo" type="string">
+      A URL to redirect to after signup.
+    </ParamField>
+    
+    <ParamField path="captchaToken" type="string">
+      Captcha token for verification.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="data" type="object">
+  <Expandable title="data properties">
+    <ResponseField name="user" type="User | null">
+      The user object.
+    </ResponseField>
+    
+    <ResponseField name="session" type="Session | null">
+      The session object.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="AuthError | null">
+  Error object if signup failed, null otherwise.
+</ResponseField>
+
+### Sign In
+
+Sign in an existing user.
+
+```javascript
+const { data, error } = await supabase.auth.signInWithPassword({
+  email: 'example@email.com',
+  password: 'example-password',
+})
+```
+
+### Sign Out
+
+Sign out the current user.
+
+```javascript
+const { error } = await supabase.auth.signOut()
+```
+
+### Get Session
+
+Get the current session.
+
+```javascript
+const { data: { session } } = await supabase.auth.getSession()
+```
+
+<ResponseField name="session" type="Session | null">
+  The current session object or null if no active session.
+</ResponseField>
+
+### Get User
+
+Get the current user.
+
+```javascript
+const { data: { user } } = await supabase.auth.getUser()
+```
+
+<ResponseField name="user" type="User | null">
+  The current user object or null if not authenticated.
+</ResponseField>
+
+## Storage
+
+### Upload File
+
+Upload a file to a storage bucket.
+
+```javascript
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .upload('public/avatar1.png', file, {
+    contentType: 'image/png'
+  })
+```
+
+<ParamField path="path" type="string" required>
+  The file path including the file name.
+</ParamField>
+
+<ParamField path="fileBody" type="File | Blob | ArrayBuffer" required>
+  The file data to upload.
+</ParamField>
+
+<ParamField path="options" type="object">
+  Upload options.
+  
+  <Expandable title="options properties">
+    <ParamField path="cacheControl" type="string">
+      Cache control header value.
+    </ParamField>
+    
+    <ParamField path="contentType" type="string">
+      MIME type of the file.
+    </ParamField>
+    
+    <ParamField path="upsert" type="boolean" default="false">
+      When true, overwrites existing file with the same path.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Download File
+
+Download a file from storage.
+
+```javascript
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .download('public/avatar1.png')
+```
+
+<ParamField path="path" type="string" required>
+  The file path to download.
+</ParamField>
+
+<ResponseField name="data" type="Blob">
+  The file data as a Blob.
+</ResponseField>
+
+### List Files
+
+List all files in a bucket.
+
+```javascript
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .list('public', {
+    limit: 100,
+    offset: 0,
+    sortBy: { column: 'name', order: 'asc' }
+  })
+```
+
+### Delete Files
+
+Delete files from storage.
+
+```javascript
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .remove(['public/avatar1.png', 'public/avatar2.png'])
+```
+
+### Get Public URL
+
+Get the public URL for a file.
+
+```javascript
+const { data } = supabase.storage
+  .from('avatars')
+  .getPublicUrl('public/avatar1.png')
+
+console.log(data.publicUrl)
+```
+
+## Realtime
+
+### Subscribe to Changes
+
+Listen to database changes in realtime.
+
+```javascript
+const channel = supabase
+  .channel('db-changes')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'countries'
+    },
+    (payload) => {
+      console.log('Change received!', payload)
+    }
+  )
+  .subscribe()
+```
+
+<ParamField path="event" type="string" required>
+  The database event to listen for: `INSERT`, `UPDATE`, `DELETE`, or `*` for all.
+</ParamField>
+
+<ParamField path="schema" type="string" required>
+  The database schema to listen to.
+</ParamField>
+
+<ParamField path="table" type="string" required>
+  The table to listen to.
+</ParamField>
+
+<ParamField path="filter" type="string">
+  Optional filter for the change events (e.g., `id=eq.1`).
+</ParamField>
+
+### Unsubscribe
+
+Stop listening to changes.
+
+```javascript
+await supabase.removeChannel(channel)
+```
+
+## Edge Functions
+
+### Invoke Function
+
+Invoke a Supabase Edge Function.
+
+```javascript
+const { data, error } = await supabase.functions.invoke('hello-world', {
+  body: { name: 'Functions' }
+})
+```
+
+<ParamField path="functionName" type="string" required>
+  The name of the Edge Function to invoke.
+</ParamField>
+
+<ParamField path="options" type="object">
+  Function invocation options.
+  
+  <Expandable title="options properties">
+    <ParamField path="body" type="object">
+      The request body to send to the function.
+    </ParamField>
+    
+    <ParamField path="headers" type="object">
+      Custom headers to send with the request.
+    </ParamField>
+    
+    <ParamField path="method" type="string" default="POST">
+      HTTP method to use.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="data" type="any">
+  The response data from the function.
+</ResponseField>
+
+<ResponseField name="error" type="FunctionsError | null">
+  Error object if invocation failed, null otherwise.
+</ResponseField>
+
+## TypeScript Support
+
+Generate TypeScript types from your database schema:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+import { Database } from './types/supabase'
+
+const supabase = createClient<Database>(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+)
+
+// Now all queries are fully typed
+const { data } = await supabase
+  .from('countries')
+  .select('*')
+  .eq('id', 1)
+  .single()
+```
+
+## Error Handling
+
+All methods return an error object if something goes wrong:
+
+```javascript
+const { data, error } = await supabase
+  .from('countries')
+  .select('*')
+
+if (error) {
+  console.error('Error:', error.message)
+  return
+}
+
+console.log('Data:', data)
+```
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/supabase/supabase-js">
+    View the source code and contribute
+  </Card>
+  
+  <Card title="NPM Package" icon="npm" href="https://www.npmjs.com/package/@supabase/supabase-js">
+    View package details and versions
+  </Card>
+</CardGroup>

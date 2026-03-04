@@ -1,0 +1,651 @@
+---
+title: 'Storage Examples'
+description: 'Code examples for file storage operations with Supabase'
+icon: 'upload'
+---
+
+Explore storage examples covering file uploads, downloads, image transformations, resumable uploads, and access control.
+
+## Basic File Upload
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(url, key)
+
+// Upload file from File object
+async function uploadFile(file: File) {
+  const { data, error } = await supabase.storage
+    .from('uploads')
+    .upload(`public/${file.name}`, file, {
+      cacheControl: '3600',
+      upsert: false,
+    })
+
+  if (error) throw error
+  return data
+}
+
+// Upload file from ArrayBuffer or Blob
+async function uploadBlob(blob: Blob, fileName: string) {
+  const { data, error } = await supabase.storage
+    .from('uploads')
+    .upload(fileName, blob)
+
+  if (error) throw error
+  return data
+}
+
+// Upload with custom metadata
+async function uploadWithMetadata(file: File) {
+  const { data, error } = await supabase.storage
+    .from('uploads')
+    .upload(file.name, file, {
+      cacheControl: '3600',
+      upsert: false,
+      metadata: {
+        title: 'My Document',
+        author: 'John Doe',
+      },
+    })
+
+  if (error) throw error
+  return data
+}
+```
+
+## Download Files
+
+```typescript
+// Download file
+async function downloadFile(path: string) {
+  const { data, error } = await supabase.storage
+    .from('uploads')
+    .download(path)
+
+  if (error) throw error
+  
+  // Create a blob URL
+  const url = URL.createObjectURL(data)
+  return url
+}
+
+// Trigger download in browser
+async function downloadAndSave(path: string, fileName: string) {
+  const { data, error } = await supabase.storage
+    .from('uploads')
+    .download(path)
+
+  if (error) throw error
+
+  const url = URL.createObjectURL(data)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+```
+
+## Public URLs
+
+```typescript
+// Get public URL for a file
+function getPublicUrl(path: string) {
+  const { data } = supabase.storage
+    .from('uploads')
+    .getPublicUrl(path)
+
+  return data.publicUrl
+}
+
+// Get public URL with transformation
+function getTransformedUrl(path: string) {
+  const { data } = supabase.storage
+    .from('uploads')
+    .getPublicUrl(path, {
+      transform: {
+        width: 500,
+        height: 500,
+        resize: 'cover',
+      },
+    })
+
+  return data.publicUrl
+}
+```
+
+## Signed URLs (Private Files)
+
+```typescript
+// Create signed URL that expires
+async function createSignedUrl(path: string, expiresIn: number = 60) {
+  const { data, error } = await supabase.storage
+    .from('private-uploads')
+    .createSignedUrl(path, expiresIn)
+
+  if (error) throw error
+  return data.signedUrl
+}
+
+// Create multiple signed URLs
+async function createSignedUrls(paths: string[]) {
+  const { data, error } = await supabase.storage
+    .from('private-uploads')
+    .createSignedUrls(paths, 60)
+
+  if (error) throw error
+  return data
+}
+```
+
+## List Files
+
+```typescript
+// List all files in a bucket
+async function listFiles(folder: string = '') {
+  const { data, error } = await supabase.storage
+    .from('uploads')
+    .list(folder, {
+      limit: 100,
+      offset: 0,
+      sortBy: { column: 'name', order: 'asc' },
+    })
+
+  if (error) throw error
+  return data
+}
+
+// List files with search
+async function searchFiles(searchTerm: string) {
+  const { data, error } = await supabase.storage
+    .from('uploads')
+    .list('', {
+      search: searchTerm,
+    })
+
+  if (error) throw error
+  return data
+}
+```
+
+## Delete Files
+
+```typescript
+// Delete single file
+async function deleteFile(path: string) {
+  const { error } = await supabase.storage
+    .from('uploads')
+    .remove([path])
+
+  if (error) throw error
+}
+
+// Delete multiple files
+async function deleteFiles(paths: string[]) {
+  const { error } = await supabase.storage
+    .from('uploads')
+    .remove(paths)
+
+  if (error) throw error
+}
+```
+
+## Move and Copy Files
+
+```typescript
+// Move file
+async function moveFile(fromPath: string, toPath: string) {
+  const { error } = await supabase.storage
+    .from('uploads')
+    .move(fromPath, toPath)
+
+  if (error) throw error
+}
+
+// Copy file
+async function copyFile(fromPath: string, toPath: string) {
+  const { error } = await supabase.storage
+    .from('uploads')
+    .copy(fromPath, toPath)
+
+  if (error) throw error
+}
+```
+
+## Image Transformations
+
+```typescript
+// Resize image
+function getResizedImage(path: string, width: number, height: number) {
+  const { data } = supabase.storage
+    .from('images')
+    .getPublicUrl(path, {
+      transform: {
+        width,
+        height,
+        resize: 'cover', // 'cover', 'contain', 'fill'
+      },
+    })
+
+  return data.publicUrl
+}
+
+// Convert format
+function getConvertedImage(path: string, format: 'webp' | 'avif' | 'jpeg') {
+  const { data } = supabase.storage
+    .from('images')
+    .getPublicUrl(path, {
+      transform: {
+        format,
+        quality: 80,
+      },
+    })
+
+  return data.publicUrl
+}
+
+// Multiple transformations
+function getOptimizedImage(path: string) {
+  const { data } = supabase.storage
+    .from('images')
+    .getPublicUrl(path, {
+      transform: {
+        width: 800,
+        height: 600,
+        resize: 'cover',
+        format: 'webp',
+        quality: 80,
+      },
+    })
+
+  return data.publicUrl
+}
+```
+
+## Resumable Upload with Uppy
+
+### Install Dependencies
+
+```bash
+npm install @uppy/core @uppy/dashboard @uppy/tus @uppy/react
+```
+
+### React Component
+
+```typescript
+import { Dashboard } from '@uppy/react'
+import Uppy from '@uppy/core'
+import Tus from '@uppy/tus'
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
+import '@uppy/core/dist/style.css'
+import '@uppy/dashboard/dist/style.css'
+
+export default function ResumableUpload({ userId }: { userId: string }) {
+  const [uppy] = useState(() =>
+    new Uppy({
+      restrictions: {
+        maxFileSize: 1000000000, // 1GB
+        maxNumberOfFiles: 5,
+      },
+      autoProceed: false,
+    })
+  )
+
+  useEffect(() => {
+    uppy.use(Tus, {
+      endpoint: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/upload/resumable`,
+      headers: {
+        authorization: `Bearer ${supabase.auth.session()?.access_token}`,
+      },
+      chunkSize: 6 * 1024 * 1024, // 6MB chunks
+      allowedMetaFields: [
+        'bucketName',
+        'objectName',
+        'contentType',
+        'cacheControl',
+      ],
+    })
+
+    uppy.on('file-added', (file) => {
+      file.meta = {
+        ...file.meta,
+        bucketName: 'uploads',
+        objectName: `${userId}/${file.name}`,
+        contentType: file.type,
+      }
+    })
+
+    uppy.on('complete', (result) => {
+      console.log('Upload complete:', result)
+    })
+
+    return () => uppy.close()
+  }, [uppy, userId])
+
+  return (
+    <Dashboard
+      uppy={uppy}
+      proudlyDisplayPoweredByUppy={false}
+      height={450}
+    />
+  )
+}
+```
+
+## Storage Policies
+
+### Public Bucket Policies
+
+```sql
+-- Allow anyone to read files
+create policy "Public files are publicly accessible"
+  on storage.objects for select
+  using (bucket_id = 'public-uploads');
+
+-- Allow authenticated users to upload
+create policy "Authenticated users can upload files"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'public-uploads'
+    and auth.role() = 'authenticated'
+  );
+
+-- Allow users to update their own files
+create policy "Users can update their own files"
+  on storage.objects for update
+  using (
+    bucket_id = 'public-uploads'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Allow users to delete their own files
+create policy "Users can delete their own files"
+  on storage.objects for delete
+  using (
+    bucket_id = 'public-uploads'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+```
+
+### Private Bucket Policies
+
+```sql
+-- Only allow users to access their own files
+create policy "Users can access their own private files"
+  on storage.objects for select
+  using (
+    bucket_id = 'private-uploads'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+create policy "Users can upload to their own folder"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'private-uploads'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+```
+
+## Avatar Upload Component
+
+```typescript
+import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import Image from 'next/image'
+
+export default function AvatarUpload({ userId }: { userId: string }) {
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true)
+
+      if (!event.target.files || event.target.files.length === 0) {
+        throw new Error('You must select an image to upload.')
+      }
+
+      const file = event.target.files[0]
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${userId}.${fileExt}`
+      const filePath = `avatars/${fileName}`
+
+      // Upload file
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true })
+
+      if (uploadError) throw uploadError
+
+      // Get public URL
+      const { data } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath)
+
+      setAvatarUrl(data.publicUrl)
+    } catch (error: any) {
+      alert(error.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-4">
+      {avatarUrl ? (
+        <Image
+          src={avatarUrl}
+          alt="Avatar"
+          width={150}
+          height={150}
+          className="rounded-full"
+        />
+      ) : (
+        <div className="w-[150px] h-[150px] rounded-full bg-gray-200" />
+      )}
+      
+      <label className="cursor-pointer px-4 py-2 bg-blue-500 text-white rounded">
+        {uploading ? 'Uploading...' : 'Upload Avatar'}
+        <input
+          type="file"
+          accept="image/*"
+          onChange={uploadAvatar}
+          disabled={uploading}
+          className="hidden"
+        />
+      </label>
+    </div>
+  )
+}
+```
+
+## File Upload with Progress
+
+```typescript
+import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
+
+export default function UploadWithProgress() {
+  const [progress, setProgress] = useState(0)
+  const [uploading, setUploading] = useState(false)
+
+  const uploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true)
+      setProgress(0)
+
+      if (!event.target.files || event.target.files.length === 0) {
+        throw new Error('You must select a file to upload.')
+      }
+
+      const file = event.target.files[0]
+      const filePath = `uploads/${Date.now()}_${file.name}`
+
+      // Upload with progress tracking
+      const { error } = await supabase.storage
+        .from('uploads')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+        })
+
+      if (error) throw error
+
+      setProgress(100)
+      alert('Upload complete!')
+    } catch (error: any) {
+      alert(error.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <input
+        type="file"
+        onChange={uploadFile}
+        disabled={uploading}
+        className="block w-full"
+      />
+      
+      {uploading && (
+        <div>
+          <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div
+              className="bg-blue-600 h-2.5 rounded-full transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="text-sm text-gray-600 mt-2">
+            {progress}% uploaded
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+## Multi-File Upload
+
+```typescript
+import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
+
+interface UploadedFile {
+  name: string
+  url: string
+}
+
+export default function MultiFileUpload() {
+  const [uploading, setUploading] = useState(false)
+  const [files, setFiles] = useState<UploadedFile[]>([])
+
+  const uploadFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true)
+
+      if (!event.target.files || event.target.files.length === 0) {
+        throw new Error('You must select files to upload.')
+      }
+
+      const uploadedFiles: UploadedFile[] = []
+
+      for (const file of Array.from(event.target.files)) {
+        const filePath = `uploads/${Date.now()}_${file.name}`
+
+        const { error } = await supabase.storage
+          .from('uploads')
+          .upload(filePath, file)
+
+        if (error) throw error
+
+        const { data } = supabase.storage
+          .from('uploads')
+          .getPublicUrl(filePath)
+
+        uploadedFiles.push({
+          name: file.name,
+          url: data.publicUrl,
+        })
+      }
+
+      setFiles(uploadedFiles)
+      alert('All files uploaded successfully!')
+    } catch (error: any) {
+      alert(error.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <input
+        type="file"
+        multiple
+        onChange={uploadFiles}
+        disabled={uploading}
+        className="block w-full"
+      />
+      
+      {files.length > 0 && (
+        <ul className="space-y-2">
+          {files.map((file, index) => (
+            <li key={index} className="flex items-center gap-2">
+              <span>{file.name}</span>
+              <a
+                href={file.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500"
+              >
+                View
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+```
+
+## Example Apps
+
+<CardGroup cols={2}>
+  <Card title="User Management" icon="users" href="https://github.com/supabase/supabase/tree/master/examples/user-management/nextjs-user-management">
+    Avatar uploads with profiles
+  </Card>
+  <Card title="Resumable Upload (Uppy)" icon="arrows-rotate" href="https://github.com/supabase/supabase/tree/master/examples/storage/resumable-upload-uppy">
+    Large file uploads with Uppy
+  </Card>
+  <Card title="Image Gallery" icon="images" href="https://github.com/supabase/supabase/tree/master/examples/storage">
+    Image transformations
+  </Card>
+  <Card title="File Manager" icon="folder" href="https://github.com/supabase/supabase/tree/master/examples/storage">
+    Complete file management
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Storage Docs" icon="book" href="/storage/overview">
+    Learn more about Storage
+  </Card>
+  <Card title="File Upload Guide" icon="graduation-cap" href="/guides/file-uploads">
+    Detailed upload tutorial
+  </Card>
+  <Card title="Image Transformations" icon="image" href="/storage/image-transformations">
+    Master image manipulation
+  </Card>
+  <Card title="Access Control" icon="lock" href="/storage/access-control">
+    Secure your files
+  </Card>
+</CardGroup>

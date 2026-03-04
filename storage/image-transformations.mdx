@@ -1,0 +1,589 @@
+---
+title: 'Image Transformations'
+description: 'Resize, crop, and optimize images on-the-fly with Supabase Storage'
+---
+
+Supabase Storage provides built-in image transformation capabilities, allowing you to resize, crop, and optimize images dynamically without storing multiple versions.
+
+## Overview
+
+Image transformations are applied via URL parameters, making it easy to serve images at different sizes and formats:
+
+- **Resize**: Scale images to specific dimensions
+- **Crop**: Extract portions of images
+- **Format Conversion**: Convert between image formats
+- **Quality Control**: Optimize file size
+- **Auto-optimization**: Automatic format and quality selection
+
+<Note>
+  Image transformations work only on public buckets and require the image transformation addon.
+</Note>
+
+## Basic Transformations
+
+### Resize Image
+
+Resize images by width and height:
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('avatars')
+  .getPublicUrl('avatar.png', {
+    transform: {
+      width: 500,
+      height: 500,
+    },
+  })
+
+console.log(data.publicUrl)
+// Returns: https://<project>.supabase.co/storage/v1/render/image/public/avatars/avatar.png?width=500&height=500
+```
+
+### Resize by Width Only
+
+Maintain aspect ratio by specifying only width:
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      width: 800,
+    },
+  })
+
+// Image will be 800px wide, height calculated automatically
+```
+
+### Resize by Height Only
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      height: 600,
+    },
+  })
+```
+
+## Responsive Images
+
+Generate multiple image sizes for responsive design:
+
+```jsx React Responsive Image
+import { supabase } from './supabaseClient'
+
+export default function ResponsiveImage({ path, alt }) {
+  const bucketName = 'images'
+
+  const getSrcSet = () => {
+    const sizes = [400, 800, 1200, 1600]
+    
+    return sizes.map(width => {
+      const { data } = supabase
+        .storage
+        .from(bucketName)
+        .getPublicUrl(path, {
+          transform: { width }
+        })
+      
+      return `${data.publicUrl} ${width}w`
+    }).join(', ')
+  }
+
+  const { data } = supabase
+    .storage
+    .from(bucketName)
+    .getPublicUrl(path, {
+      transform: { width: 800 }
+    })
+
+  return (
+    <img
+      src={data.publicUrl}
+      srcSet={getSrcSet()}
+      sizes="(max-width: 768px) 100vw, 50vw"
+      alt={alt}
+    />
+  )
+}
+```
+
+## Resize Modes
+
+### Cover Mode
+
+Crop image to fill dimensions exactly:
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      width: 500,
+      height: 500,
+      resize: 'cover', // Default
+    },
+  })
+```
+
+### Contain Mode
+
+Resize to fit within dimensions:
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      width: 500,
+      height: 500,
+      resize: 'contain',
+    },
+  })
+```
+
+### Fill Mode
+
+Resize and add padding to exact dimensions:
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      width: 500,
+      height: 500,
+      resize: 'fill',
+    },
+  })
+```
+
+## Quality Control
+
+Control image quality (1-100):
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      width: 800,
+      quality: 80, // Balance between quality and file size
+    },
+  })
+```
+
+<Tabs>
+  <Tab title="High Quality">
+    ```javascript
+    // quality: 100 - Maximum quality, larger file size
+    transform: { width: 800, quality: 100 }
+    ```
+  </Tab>
+  
+  <Tab title="Balanced">
+    ```javascript
+    // quality: 80 - Good balance (recommended)
+    transform: { width: 800, quality: 80 }
+    ```
+  </Tab>
+  
+  <Tab title="Optimized">
+    ```javascript
+    // quality: 60 - Smaller files, slight quality loss
+    transform: { width: 800, quality: 60 }
+    ```
+  </Tab>
+</Tabs>
+
+## Format Conversion
+
+Convert images to different formats:
+
+```javascript
+// Convert to WebP
+const { data } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      width: 800,
+      format: 'webp',
+    },
+  })
+
+// Supported formats: webp, jpg, jpeg, png, avif
+```
+
+### Auto Format
+
+Automatically select the best format:
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      width: 800,
+      format: 'origin', // Use original format
+    },
+  })
+```
+
+## Advanced Transformations
+
+### Thumbnail Generator
+
+```jsx Thumbnail Component
+import { supabase } from './supabaseClient'
+
+export default function Thumbnail({ path, size = 150 }) {
+  const { data } = supabase
+    .storage
+    .from('images')
+    .getPublicUrl(path, {
+      transform: {
+        width: size,
+        height: size,
+        resize: 'cover',
+        quality: 80,
+      },
+    })
+
+  return (
+    <img
+      src={data.publicUrl}
+      alt="Thumbnail"
+      width={size}
+      height={size}
+      style={{ objectFit: 'cover', borderRadius: '8px' }}
+    />
+  )
+}
+```
+
+### Avatar with Fallback
+
+```jsx Avatar Component
+import { useState } from 'react'
+import { supabase } from './supabaseClient'
+
+export default function Avatar({ userId, size = 100 }) {
+  const [imageError, setImageError] = useState(false)
+  const avatarPath = `avatars/${userId}.png`
+
+  const { data } = supabase
+    .storage
+    .from('avatars')
+    .getPublicUrl(avatarPath, {
+      transform: {
+        width: size,
+        height: size,
+        resize: 'cover',
+      },
+    })
+
+  if (imageError) {
+    // Fallback to default avatar
+    return (
+      <div
+        style={{
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          backgroundColor: '#ccc',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: size / 2,
+        }}
+      >
+        {userId[0].toUpperCase()}
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={data.publicUrl}
+      alt="Avatar"
+      width={size}
+      height={size}
+      style={{ borderRadius: '50%', objectFit: 'cover' }}
+      onError={() => setImageError(true)}
+    />
+  )
+}
+```
+
+### Image Gallery
+
+```jsx Image Gallery
+import { useState, useEffect } from 'react'
+import { supabase } from './supabaseClient'
+
+export default function ImageGallery({ folder = '' }) {
+  const [images, setImages] = useState([])
+  const [selectedImage, setSelectedImage] = useState(null)
+
+  useEffect(() => {
+    loadImages()
+  }, [folder])
+
+  async function loadImages() {
+    const { data, error } = await supabase
+      .storage
+      .from('gallery')
+      .list(folder)
+
+    if (error) {
+      console.error('Error loading images:', error)
+      return
+    }
+
+    // Filter image files
+    const imageFiles = data.filter(file => 
+      /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name)
+    )
+    
+    setImages(imageFiles)
+  }
+
+  function getThumbnailUrl(fileName) {
+    const path = folder ? `${folder}/${fileName}` : fileName
+    const { data } = supabase
+      .storage
+      .from('gallery')
+      .getPublicUrl(path, {
+        transform: {
+          width: 300,
+          height: 300,
+          resize: 'cover',
+          quality: 80,
+        },
+      })
+    return data.publicUrl
+  }
+
+  function getFullUrl(fileName) {
+    const path = folder ? `${folder}/${fileName}` : fileName
+    const { data } = supabase
+      .storage
+      .from('gallery')
+      .getPublicUrl(path, {
+        transform: {
+          width: 1200,
+          quality: 90,
+        },
+      })
+    return data.publicUrl
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
+        {images.map((image) => (
+          <img
+            key={image.name}
+            src={getThumbnailUrl(image.name)}
+            alt={image.name}
+            style={{ width: '100%', cursor: 'pointer', borderRadius: '8px' }}
+            onClick={() => setSelectedImage(image.name)}
+          />
+        ))}
+      </div>
+
+      {selectedImage && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setSelectedImage(null)}
+        >
+          <img
+            src={getFullUrl(selectedImage)}
+            alt={selectedImage}
+            style={{ maxWidth: '90%', maxHeight: '90%' }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+## Performance Optimization
+
+### Lazy Loading
+
+```jsx Lazy Loaded Image
+export default function LazyImage({ path, alt, width, height }) {
+  const { data } = supabase
+    .storage
+    .from('images')
+    .getPublicUrl(path, {
+      transform: { width, height, quality: 80 },
+    })
+
+  return (
+    <img
+      src={data.publicUrl}
+      alt={alt}
+      loading="lazy"
+      width={width}
+      height={height}
+    />
+  )
+}
+```
+
+### Progressive JPEG
+
+```javascript
+// Use lower quality for initial load, higher for final
+const { data: lowQuality } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      width: 800,
+      quality: 20, // Low quality placeholder
+    },
+  })
+
+const { data: highQuality } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: {
+      width: 800,
+      quality: 90, // High quality final image
+    },
+  })
+```
+
+## CDN and Caching
+
+Transformed images are automatically cached:
+
+```javascript
+// First request: Image is transformed and cached
+const url1 = getTransformedUrl('photo.jpg', { width: 800 })
+
+// Subsequent requests: Served from cache (very fast)
+const url2 = getTransformedUrl('photo.jpg', { width: 800 })
+```
+
+## Transformation Limits
+
+- **Maximum dimensions**: 2500 x 2500 pixels
+- **Maximum file size**: 25MB for transformation
+- **Supported formats**: JPEG, PNG, WebP, GIF, AVIF
+
+<Warning>
+  Images larger than 25MB cannot be transformed. Upload optimized images or use image processing before upload.
+</Warning>
+
+## URL Parameters
+
+Alternatively, use URL parameters directly:
+
+```javascript
+// Base URL
+const baseUrl = 'https://<project>.supabase.co/storage/v1/object/public/images/photo.jpg'
+
+// Add transformation parameters
+const transformedUrl = `${baseUrl}?width=800&height=600&resize=cover&quality=80&format=webp`
+```
+
+Available parameters:
+- `width`: Image width in pixels
+- `height`: Image height in pixels
+- `resize`: `cover`, `contain`, or `fill`
+- `quality`: 1-100
+- `format`: `webp`, `jpg`, `png`, `avif`
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use WebP Format" icon="image">
+    WebP provides better compression than JPEG/PNG
+  </Card>
+  
+  <Card title="Set Appropriate Quality" icon="sliders">
+    Quality 80 is usually a good balance
+  </Card>
+  
+  <Card title="Generate Responsive Images" icon="mobile">
+    Use srcset for different screen sizes
+  </Card>
+  
+  <Card title="Lazy Load Images" icon="hourglass">
+    Improve page load time with lazy loading
+  </Card>
+</CardGroup>
+
+## Common Use Cases
+
+<AccordionGroup>
+  <Accordion title="Product Images">
+    ```javascript
+    // Thumbnail for listing
+    transform: { width: 300, height: 300, resize: 'cover', quality: 80 }
+    
+    // Detail view
+    transform: { width: 1200, quality: 90 }
+    ```
+  </Accordion>
+  
+  <Accordion title="User Avatars">
+    ```javascript
+    // Small avatar
+    transform: { width: 40, height: 40, resize: 'cover' }
+    
+    // Profile page avatar
+    transform: { width: 200, height: 200, resize: 'cover' }
+    ```
+  </Accordion>
+  
+  <Accordion title="Blog Images">
+    ```javascript
+    // Hero image
+    transform: { width: 1200, quality: 85, format: 'webp' }
+    
+    // Thumbnail
+    transform: { width: 400, height: 300, resize: 'cover', quality: 80 }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Access Control" icon="shield" href="/storage/access-control">
+    Secure your images with RLS policies
+  </Card>
+  
+  <Card title="Upload Files" icon="upload" href="/storage/uploads">
+    Learn how to upload images
+  </Card>
+</CardGroup>

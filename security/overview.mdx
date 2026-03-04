@@ -1,0 +1,416 @@
+---
+title: 'Security Overview'
+description: 'Comprehensive security features and best practices for Supabase'
+---
+
+Supabase provides enterprise-grade security features to protect your data and applications. From database-level Row Level Security to network restrictions and encryption, you have complete control over your security posture.
+
+## Security Architecture
+
+Supabase implements a multi-layered security approach:
+
+<CardGroup cols={2}>
+  <Card title="Database Security" icon="database">
+    Row Level Security (RLS) policies control data access at the database level
+  </Card>
+  
+  <Card title="Network Security" icon="network-wired">
+    IP restrictions and SSL enforcement protect connections
+  </Card>
+  
+  <Card title="Authentication" icon="key">
+    Built-in auth with JWT tokens and MFA support
+  </Card>
+  
+  <Card title="Encryption" icon="lock">
+    Data encrypted at rest and in transit
+  </Card>
+</CardGroup>
+
+## Core Security Features
+
+### Row Level Security (RLS)
+
+PostgreSQL's Row Level Security is your primary defense mechanism. RLS policies control which rows users can access, providing granular authorization at the database level.
+
+```sql
+-- Enable RLS on a table
+ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
+
+-- Create a policy
+CREATE POLICY "Users can view their own posts"
+  ON posts
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() = user_id);
+```
+
+<Danger>
+**Critical**: All tables in the `public` schema MUST have RLS enabled before going to production. Without RLS, anyone with your anon key can access all data.
+</Danger>
+
+<Card title="Row Level Security Guide" icon="shield" href="./row-level-security">
+  Learn how to implement and optimize RLS policies
+</Card>
+
+### Network Security
+
+Control who can connect to your database:
+
+- **IP Restrictions**: Whitelist specific IP addresses or CIDR ranges
+- **SSL Enforcement**: Require encrypted connections to PostgreSQL
+- **Private Networks**: Isolate databases from public internet (Enterprise)
+
+<Card title="Network Security" icon="network-wired" href="./network">
+  Configure network restrictions and SSL enforcement
+</Card>
+
+### Encryption
+
+All data is protected with encryption:
+
+- **At Rest**: AES-256 encryption for all data stored on disk
+- **In Transit**: TLS 1.2+ for all HTTPS and PostgreSQL connections  
+- **Transparent**: No configuration needed, always enabled
+
+<Card title="Encryption Details" icon="lock" href="./encryption">
+  Learn about Supabase encryption implementation
+</Card>
+
+## Security Best Practices
+
+### 1. Enable RLS on All Tables
+
+Check which tables don't have RLS:
+
+```sql
+SELECT 
+  schemaname, 
+  tablename 
+FROM pg_tables 
+WHERE schemaname = 'public' 
+  AND tablename NOT IN (
+    SELECT tablename 
+    FROM pg_tables t
+    JOIN pg_class c ON c.relname = t.tablename
+    WHERE c.relrowsecurity = true
+  );
+```
+
+Enable RLS:
+
+```sql
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+```
+
+### 2. Use Service Keys Securely
+
+<Warning>
+**Never** expose service_role keys in:
+- Client-side code
+- Git repositories
+- Browser applications
+- Mobile apps
+</Warning>
+
+**Safe usage**:
+- Server-side code only
+- Environment variables
+- Secure key management systems
+- Admin tools with proper access control
+
+### 3. Enable Email Confirmations
+
+Require users to verify their email addresses:
+
+1. Go to **Authentication** → **Providers**
+2. Enable "Confirm email"
+3. Configure email templates
+
+### 4. Set Up Multi-Factor Authentication
+
+Protect sensitive accounts with MFA:
+
+**For your organization**:
+- Enable MFA on your Supabase account
+- Enforce MFA for all organization members
+
+**For your users**:
+```javascript
+// Enable MFA for users
+const { data, error } = await supabase.auth.mfa.enroll({
+  factorType: 'totp'
+})
+```
+
+### 5. Configure SMTP for Production
+
+Use custom SMTP to:
+- Improve email deliverability
+- Build trust with users
+- Increase rate limits
+- Maintain brand consistency
+
+<Note>
+Default Supabase emails are rate-limited to 30/hour and should only be used for development.
+</Note>
+
+### 6. Review Security Advisor
+
+Use the built-in Security Advisor to find issues:
+
+1. Go to **Database** → **Security Advisor**
+2. Review all recommendations
+3. Address high-priority issues
+4. Re-run after fixes
+
+## Authentication Security
+
+### Password Security
+
+Configure strong password requirements:
+
+1. Go to **Authentication** → **Providers** → **Email**
+2. Set minimum password length (recommend 12+ characters)
+3. Require character complexity:
+   - Lowercase letters
+   - Uppercase letters  
+   - Numbers
+   - Symbols: ``!@#$%^&*()_+-=[]{}\;':"<>?,./`~``
+4. Enable leaked password protection (Pro plan+)
+
+### Session Security
+
+Manage user sessions securely:
+
+```javascript
+// Set session timeout
+const { data, error } = await supabase.auth.updateUser({
+  data: { session_timeout: 3600 } // 1 hour
+})
+
+// Revoke all sessions
+await supabase.auth.admin.signOut(userId)
+```
+
+### Redirect URL Security
+
+Control where auth redirects are allowed:
+
+1. Go to **Authentication** → **URL Configuration**
+2. Add only trusted redirect URLs
+3. Use wildcards carefully: `https://*.yourdomain.com`
+
+## API Security
+
+### Rate Limiting
+
+Supabase applies rate limits to prevent abuse:
+
+| Endpoint | Default Limit | Configurable |
+|----------|---------------|-------------|
+| Email endpoints | 30/hour | With custom SMTP |
+| OTP endpoints | 360/hour | Yes |
+| Token refresh | 1800/hour | No |
+| Anonymous sign-in | 30/hour | No |
+
+Configure custom limits in **Authentication** → **Rate Limits**.
+
+### CAPTCHA Protection
+
+Protect auth endpoints from bots:
+
+```javascript
+// Enable CAPTCHA for sign-up
+const { data, error } = await supabase.auth.signUp({
+  email: 'user@example.com',
+  password: 'password',
+  options: {
+    captchaToken: captchaToken
+  }
+})
+```
+
+Configure in **Authentication** → **Settings** → **Bot Protection**.
+
+## Database Security
+
+### Secure Database Credentials
+
+**Best practices**:
+- Use strong, unique passwords (20+ characters)
+- Rotate credentials regularly
+- Store in secure key management systems
+- Never commit to version control
+
+### Database Roles
+
+Supabase provides two main roles:
+
+- **`anon`**: For unauthenticated requests (public access)
+- **`authenticated`**: For logged-in users
+
+Use in RLS policies:
+
+```sql
+CREATE POLICY "Public read access"
+  ON products
+  FOR SELECT
+  TO anon
+  USING (published = true);
+
+CREATE POLICY "Authenticated users can create"
+  ON products
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (user_id = auth.uid());
+```
+
+### Prevent SQL Injection
+
+Always use parameterized queries:
+
+<CodeGroup>
+```javascript Good: Parameterized
+const { data } = await supabase
+  .from('users')
+  .select('*')
+  .eq('email', userEmail)
+```
+
+```javascript Bad: String concatenation
+const { data } = await supabase
+  .rpc('raw_query', {
+    query: `SELECT * FROM users WHERE email = '${userEmail}'`
+  })
+```
+</CodeGroup>
+
+## Production Security Checklist
+
+Before launching to production:
+
+<Steps>
+  <Step title="Enable RLS">
+    ✅ All public tables have RLS enabled  
+    ✅ Policies tested thoroughly  
+    ✅ No service_role key in client code
+  </Step>
+  
+  <Step title="Configure Authentication">
+    ✅ Email confirmation enabled  
+    ✅ Custom SMTP configured  
+    ✅ Password requirements set  
+    ✅ Redirect URLs configured  
+    ✅ MFA available for users
+  </Step>
+  
+  <Step title="Network Security">
+    ✅ SSL enforcement enabled  
+    ✅ Network restrictions configured (if needed)  
+    ✅ API keys rotated from defaults
+  </Step>
+  
+  <Step title="Account Security">
+    ✅ MFA enabled on your account  
+    ✅ MFA enforced for organization  
+    ✅ Multiple org owners configured  
+    ✅ GitHub 2FA enabled (if using GitHub login)
+  </Step>
+  
+  <Step title="Monitoring">
+    ✅ Security Advisor reviewed  
+    ✅ Performance Advisor reviewed  
+    ✅ Logs monitored  
+    ✅ Alerts configured
+  </Step>
+</Steps>
+
+<Card title="Complete Production Checklist" icon="clipboard-check" href="/platform/production-checklist">
+  View the full pre-launch checklist
+</Card>
+
+## Security Compliance
+
+Supabase maintains industry-standard security certifications:
+
+- **SOC 2 Type II** - Audited security controls
+- **GDPR Compliant** - European data protection
+- **HIPAA Available** - Healthcare data (Enterprise)
+- **ISO 27001** - Information security management
+
+<Info>
+Enterprise plans include additional compliance options and dedicated security support.
+</Info>
+
+## Reporting Security Issues
+
+If you discover a security vulnerability:
+
+1. **Do not** open a public GitHub issue
+2. Email security@supabase.io
+3. Include detailed reproduction steps
+4. Allow time for response and fix
+
+View our full security policy: [supabase.com/.well-known/security.txt](https://supabase.com/.well-known/security.txt)
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Row Level Security" icon="shield" href="./row-level-security">
+    Implement granular access control
+  </Card>
+  
+  <Card title="Network Security" icon="network-wired" href="./network">
+    Configure IP restrictions and SSL
+  </Card>
+  
+  <Card title="Encryption" icon="lock" href="./encryption">
+    Understand data encryption
+  </Card>
+  
+  <Card title="Auth Security" icon="key" href="/authentication/overview">
+    Secure authentication flows
+  </Card>
+</CardGroup>
+
+## Common Security Pitfalls
+
+<AccordionGroup>
+  <Accordion title="Forgetting to enable RLS">
+    **Risk**: Anyone can read/write all data
+    
+    **Solution**: 
+    - Enable RLS on all tables
+    - Use Security Advisor to find unprotected tables
+    - Set up automatic RLS with event triggers
+  </Accordion>
+  
+  <Accordion title="Using service_role key in client">
+    **Risk**: Complete database access exposed
+    
+    **Solution**:
+    - Only use anon key in client applications
+    - Keep service_role key server-side only
+    - Rotate keys if accidentally exposed
+  </Accordion>
+  
+  <Accordion title="Weak password requirements">
+    **Risk**: Account takeovers via brute force
+    
+    **Solution**:
+    - Require 12+ character passwords
+    - Enable character complexity
+    - Use leaked password protection
+    - Implement MFA for sensitive accounts
+  </Accordion>
+  
+  <Accordion title="Not using HTTPS">
+    **Risk**: Credentials intercepted in transit
+    
+    **Solution**:
+    - Always use HTTPS in production
+    - Enable SSL enforcement for database
+    - Use secure cookies
+  </Accordion>
+</AccordionGroup>

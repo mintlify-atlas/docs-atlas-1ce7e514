@@ -1,0 +1,551 @@
+---
+title: 'Flutter SDK'
+description: 'Complete reference for the Supabase Flutter client library'
+icon: 'mobile'
+---
+
+## Installation
+
+Add the Supabase Flutter package to your `pubspec.yaml`:
+
+```yaml
+dependencies:
+  supabase_flutter: ^2.0.0
+```
+
+Then run:
+
+```bash
+flutter pub get
+```
+
+## Initializing
+
+Initialize Supabase in your app's main function.
+
+```dart
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: 'YOUR_SUPABASE_URL',
+    anonKey: 'YOUR_SUPABASE_ANON_KEY',
+  );
+
+  runApp(MyApp());
+}
+
+final supabase = Supabase.instance.client;
+```
+
+<ParamField path="url" type="String" required>
+  The unique Supabase URL for your project.
+</ParamField>
+
+<ParamField path="anonKey" type="String" required>
+  The Supabase anon key for your project.
+</ParamField>
+
+<ParamField path="authOptions" type="AuthClientOptions">
+  Authentication configuration options.
+  
+  <Expandable title="authOptions properties">
+    <ParamField path="autoRefreshToken" type="bool" default="true">
+      Automatically refresh the token before expiring.
+    </ParamField>
+    
+    <ParamField path="persistSession" type="bool" default="true">
+      Whether to persist the user session to local storage.
+    </ParamField>
+    
+    <ParamField path="detectSessionInUri" type="bool" default="true">
+      Detect OAuth grants in the URL and sign in automatically.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Database Operations
+
+### Select Data
+
+Query data from your tables.
+
+```dart
+final response = await supabase
+  .from('countries')
+  .select();
+```
+
+<ResponseField name="response" type="List<Map<String, dynamic>>">
+  The returned rows from the query.
+</ResponseField>
+
+#### Select with Filters
+
+```dart
+final response = await supabase
+  .from('countries')
+  .select('name, capital')
+  .eq('id', 1)
+  .single();
+```
+
+#### Select with Joins
+
+```dart
+final response = await supabase
+  .from('countries')
+  .select('''
+    name,
+    cities (
+      name,
+      population
+    )
+  ''');
+```
+
+#### Common Filters
+
+```dart
+// Equal to
+final data = await supabase
+  .from('countries')
+  .select()
+  .eq('name', 'Albania');
+
+// Not equal to
+final data = await supabase
+  .from('countries')
+  .select()
+  .neq('name', 'Albania');
+
+// Greater than
+final data = await supabase
+  .from('countries')
+  .select()
+  .gt('population', 1000000);
+
+// Less than
+final data = await supabase
+  .from('countries')
+  .select()
+  .lt('population', 1000000);
+
+// Like (pattern matching)
+final data = await supabase
+  .from('countries')
+  .select()
+  .like('name', '%Alba%');
+
+// In list
+final data = await supabase
+  .from('countries')
+  .select()
+  .inFilter('name', ['Albania', 'Algeria']);
+```
+
+### Insert Data
+
+Insert rows into your tables.
+
+```dart
+final response = await supabase
+  .from('countries')
+  .insert({
+    'name': 'Denmark',
+    'code': 'DK'
+  })
+  .select();
+```
+
+<ParamField path="values" type="Map | List<Map>" required>
+  The values to insert. Can be a single map or a list of maps.
+</ParamField>
+
+#### Insert Multiple Rows
+
+```dart
+final response = await supabase
+  .from('countries')
+  .insert([
+    {'name': 'Denmark', 'code': 'DK'},
+    {'name': 'Norway', 'code': 'NO'}
+  ])
+  .select();
+```
+
+### Update Data
+
+Update existing rows in your tables.
+
+```dart
+final response = await supabase
+  .from('countries')
+  .update({'name': 'Australia'})
+  .eq('id', 1)
+  .select();
+```
+
+<ParamField path="values" type="Map<String, dynamic>" required>
+  The values to update.
+</ParamField>
+
+### Upsert Data
+
+Insert or update rows based on unique constraints.
+
+```dart
+final response = await supabase
+  .from('countries')
+  .upsert({'id': 1, 'name': 'Australia'})
+  .select();
+```
+
+### Delete Data
+
+Delete rows from your tables.
+
+```dart
+final response = await supabase
+  .from('countries')
+  .delete()
+  .eq('id', 1);
+```
+
+## Authentication
+
+### Sign Up
+
+Create a new user account.
+
+```dart
+final response = await supabase.auth.signUp(
+  email: 'example@email.com',
+  password: 'example-password',
+);
+```
+
+<ParamField path="email" type="String" required>
+  The user's email address.
+</ParamField>
+
+<ParamField path="password" type="String" required>
+  The user's password.
+</ParamField>
+
+<ParamField path="data" type="Map<String, dynamic>">
+  Additional user metadata.
+</ParamField>
+
+<ParamField path="emailRedirectTo" type="String">
+  A URL to redirect to after signup.
+</ParamField>
+
+<ResponseField name="response" type="AuthResponse">
+  <Expandable title="response properties">
+    <ResponseField name="user" type="User?">
+      The user object.
+    </ResponseField>
+    
+    <ResponseField name="session" type="Session?">
+      The session object.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Sign In
+
+Sign in an existing user.
+
+```dart
+final response = await supabase.auth.signInWithPassword(
+  email: 'example@email.com',
+  password: 'example-password',
+);
+```
+
+### Sign Out
+
+Sign out the current user.
+
+```dart
+await supabase.auth.signOut();
+```
+
+### Get Session
+
+Get the current session.
+
+```dart
+final session = supabase.auth.currentSession;
+```
+
+<ResponseField name="session" type="Session?">
+  The current session object or null if no active session.
+</ResponseField>
+
+### Get User
+
+Get the current user.
+
+```dart
+final user = supabase.auth.currentUser;
+```
+
+<ResponseField name="user" type="User?">
+  The current user object or null if not authenticated.
+</ResponseField>
+
+### Auth State Changes
+
+Listen to authentication state changes.
+
+```dart
+supabase.auth.onAuthStateChange.listen((data) {
+  final AuthChangeEvent event = data.event;
+  final Session? session = data.session;
+  
+  if (event == AuthChangeEvent.signedIn) {
+    // User signed in
+  }
+});
+```
+
+## Storage
+
+### Upload File
+
+Upload a file to a storage bucket.
+
+```dart
+import 'dart:io';
+
+final file = File('path/to/file');
+final response = await supabase.storage
+  .from('avatars')
+  .upload(
+    'public/avatar1.png',
+    file,
+    fileOptions: const FileOptions(
+      contentType: 'image/png'
+    ),
+  );
+```
+
+<ParamField path="path" type="String" required>
+  The file path including the file name.
+</ParamField>
+
+<ParamField path="file" type="File | Uint8List" required>
+  The file data to upload.
+</ParamField>
+
+<ParamField path="fileOptions" type="FileOptions">
+  Upload options.
+  
+  <Expandable title="fileOptions properties">
+    <ParamField path="cacheControl" type="String">
+      Cache control header value.
+    </ParamField>
+    
+    <ParamField path="contentType" type="String">
+      MIME type of the file.
+    </ParamField>
+    
+    <ParamField path="upsert" type="bool" default="false">
+      When true, overwrites existing file with the same path.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Download File
+
+Download a file from storage.
+
+```dart
+final data = await supabase.storage
+  .from('avatars')
+  .download('public/avatar1.png');
+```
+
+<ParamField path="path" type="String" required>
+  The file path to download.
+</ParamField>
+
+<ResponseField name="data" type="Uint8List">
+  The file data as bytes.
+</ResponseField>
+
+### List Files
+
+List all files in a bucket.
+
+```dart
+final files = await supabase.storage
+  .from('avatars')
+  .list(
+    path: 'public',
+    searchOptions: const SearchOptions(
+      limit: 100,
+      offset: 0,
+      sortBy: SortBy(
+        column: 'name',
+        order: 'asc',
+      ),
+    ),
+  );
+```
+
+### Delete Files
+
+Delete files from storage.
+
+```dart
+await supabase.storage
+  .from('avatars')
+  .remove(['public/avatar1.png', 'public/avatar2.png']);
+```
+
+### Get Public URL
+
+Get the public URL for a file.
+
+```dart
+final url = supabase.storage
+  .from('avatars')
+  .getPublicUrl('public/avatar1.png');
+
+print(url);
+```
+
+## Realtime
+
+### Subscribe to Changes
+
+Listen to database changes in realtime.
+
+```dart
+final channel = supabase
+  .channel('db-changes')
+  .onPostgresChanges(
+    event: PostgresChangeEvent.all,
+    schema: 'public',
+    table: 'countries',
+    callback: (payload) {
+      print('Change received: $payload');
+    },
+  )
+  .subscribe();
+```
+
+<ParamField path="event" type="PostgresChangeEvent" required>
+  The database event to listen for: `insert`, `update`, `delete`, or `all`.
+</ParamField>
+
+<ParamField path="schema" type="String" required>
+  The database schema to listen to.
+</ParamField>
+
+<ParamField path="table" type="String" required>
+  The table to listen to.
+</ParamField>
+
+<ParamField path="callback" type="void Function(dynamic)" required>
+  Function to call when an event occurs.
+</ParamField>
+
+### Unsubscribe
+
+Stop listening to changes.
+
+```dart
+await supabase.removeChannel(channel);
+```
+
+## Edge Functions
+
+### Invoke Function
+
+Invoke a Supabase Edge Function.
+
+```dart
+final response = await supabase.functions.invoke(
+  'hello-world',
+  body: {'name': 'Functions'},
+);
+
+final data = response.data;
+```
+
+<ParamField path="functionName" type="String" required>
+  The name of the Edge Function to invoke.
+</ParamField>
+
+<ParamField path="body" type="Map<String, dynamic>">
+  The request body to send to the function.
+</ParamField>
+
+<ParamField path="headers" type="Map<String, String>">
+  Custom headers to send with the request.
+</ParamField>
+
+<ParamField path="method" type="HttpMethod" default="HttpMethod.post">
+  HTTP method to use.
+</ParamField>
+
+<ResponseField name="response" type="FunctionResponse">
+  <Expandable title="response properties">
+    <ResponseField name="data" type="dynamic">
+      The response data from the function.
+    </ResponseField>
+    
+    <ResponseField name="status" type="int">
+      HTTP status code.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Handling
+
+Handle errors using try-catch blocks:
+
+```dart
+try {
+  final data = await supabase
+    .from('countries')
+    .select();
+  print('Data: $data');
+} on PostgrestException catch (error) {
+  print('Database error: ${error.message}');
+} catch (error) {
+  print('Unexpected error: $error');
+}
+```
+
+## Deep Links
+
+Handle deep links for OAuth and password recovery:
+
+```dart
+import 'package:app_links/app_links.dart';
+
+final appLinks = AppLinks();
+
+appLinks.uriLinkStream.listen((uri) {
+  supabase.auth.getSessionFromUrl(uri);
+});
+```
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/supabase/supabase-flutter">
+    View the source code and contribute
+  </Card>
+  
+  <Card title="pub.dev Package" icon="mobile" href="https://pub.dev/packages/supabase_flutter">
+    View package details and versions
+  </Card>
+</CardGroup>

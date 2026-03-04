@@ -1,0 +1,457 @@
+---
+title: 'Realtime Overview'
+description: 'Subscribe to database changes and broadcast messages in realtime'
+icon: 'bolt'
+---
+
+## Introduction
+
+Supabase Realtime allows you to listen to database changes, broadcast messages, track presence, and sync data across clients in real-time. It's built on Phoenix Channels and WebSockets.
+
+## Features
+
+### Postgres Changes
+
+Listen to INSERT, UPDATE, and DELETE operations on your database tables.
+
+### Broadcast
+
+Send ephemeral messages between clients without persisting to the database.
+
+### Presence
+
+Track and synchronize shared state between clients (like online users).
+
+## WebSocket Endpoint
+
+Connect to the Realtime server:
+
+```
+wss://<PROJECT_REF>.supabase.co/realtime/v1/websocket
+```
+
+## Authentication
+
+Authenticate using your API key and optional JWT token:
+
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://<PROJECT_REF>.supabase.co',
+  'YOUR_ANON_KEY'
+)
+
+// Authentication is handled automatically by the client
+```
+
+## Channels
+
+Channels are the foundation of Realtime. Create a channel to subscribe to changes:
+
+```javascript
+const channel = supabase.channel('room-1')
+```
+
+<ParamField path="name" type="string" required>
+  Unique identifier for the channel.
+</ParamField>
+
+### Channel Lifecycle
+
+```javascript
+const channel = supabase.channel('my-channel')
+
+// Subscribe to the channel
+channel.subscribe((status) => {
+  if (status === 'SUBSCRIBED') {
+    console.log('Connected!')
+  }
+})
+
+// Unsubscribe when done
+await supabase.removeChannel(channel)
+```
+
+## Postgres Changes
+
+Listen to database changes in real-time.
+
+### Listen to All Changes
+
+```javascript
+const channel = supabase
+  .channel('db-changes')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'countries'
+    },
+    (payload) => {
+      console.log('Change received!', payload)
+    }
+  )
+  .subscribe()
+```
+
+<ParamField path="event" type="string" required>
+  The event type: `INSERT`, `UPDATE`, `DELETE`, or `*` for all.
+</ParamField>
+
+<ParamField path="schema" type="string" required>
+  The database schema (usually `public`).
+</ParamField>
+
+<ParamField path="table" type="string" required>
+  The table name to listen to.
+</ParamField>
+
+### Payload Structure
+
+```javascript
+{
+  commit_timestamp: "2024-03-04T10:00:00Z",
+  eventType: "INSERT", // or UPDATE, DELETE
+  new: {
+    id: 1,
+    name: "Denmark",
+    code: "DK"
+  },
+  old: {}, // Empty for INSERT, contains old values for UPDATE/DELETE
+  schema: "public",
+  table: "countries"
+}
+```
+
+<ResponseField name="eventType" type="string">
+  The type of change: `INSERT`, `UPDATE`, or `DELETE`.
+</ResponseField>
+
+<ResponseField name="new" type="object">
+  The new row data (for INSERT and UPDATE).
+</ResponseField>
+
+<ResponseField name="old" type="object">
+  The old row data (for UPDATE and DELETE).
+</ResponseField>
+
+<ResponseField name="commit_timestamp" type="string">
+  ISO 8601 timestamp of the change.
+</ResponseField>
+
+### Listen to Specific Events
+
+```javascript
+// Listen to inserts only
+const channel = supabase
+  .channel('inserts')
+  .on(
+    'postgres_changes',
+    {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'countries'
+    },
+    (payload) => {
+      console.log('New country:', payload.new)
+    }
+  )
+  .subscribe()
+```
+
+### Filter Changes
+
+Filter changes based on column values:
+
+```javascript
+const channel = supabase
+  .channel('filtered-changes')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'countries',
+      filter: 'code=eq.US'
+    },
+    (payload) => {
+      console.log('US country changed:', payload)
+    }
+  )
+  .subscribe()
+```
+
+<ParamField path="filter" type="string">
+  Filter expression in the format `column=op.value`.
+</ParamField>
+
+## Broadcast
+
+Send and receive ephemeral messages between clients.
+
+### Send Messages
+
+```javascript
+const channel = supabase.channel('room-1')
+
+// Send a message
+await channel.send({
+  type: 'broadcast',
+  event: 'cursor-pos',
+  payload: { x: 100, y: 200 }
+})
+```
+
+<ParamField path="event" type="string" required>
+  The event name for the broadcast.
+</ParamField>
+
+<ParamField path="payload" type="object" required>
+  The data to broadcast to other clients.
+</ParamField>
+
+### Receive Messages
+
+```javascript
+const channel = supabase
+  .channel('room-1')
+  .on(
+    'broadcast',
+    { event: 'cursor-pos' },
+    (payload) => {
+      console.log('Cursor position:', payload)
+    }
+  )
+  .subscribe()
+```
+
+## Presence
+
+Track which users are online and sync shared state.
+
+### Track Presence
+
+```javascript
+const channel = supabase.channel('online-users')
+
+// Track this user's presence
+await channel.track({
+  user_id: 'user-1',
+  online_at: new Date().toISOString()
+})
+```
+
+<ParamField path="state" type="object" required>
+  The state to track for this client.
+</ParamField>
+
+### Listen to Presence
+
+```javascript
+const channel = supabase
+  .channel('online-users')
+  .on('presence', { event: 'sync' }, () => {
+    const state = channel.presenceState()
+    console.log('Online users:', state)
+  })
+  .on('presence', { event: 'join' }, ({ newPresences }) => {
+    console.log('User joined:', newPresences)
+  })
+  .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+    console.log('User left:', leftPresences)
+  })
+  .subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await channel.track({ user: 'user-1' })
+    }
+  })
+```
+
+### Presence Events
+
+<ResponseField name="sync" type="event">
+  Fired when presence state is synchronized.
+</ResponseField>
+
+<ResponseField name="join" type="event">
+  Fired when a new client joins the channel.
+</ResponseField>
+
+<ResponseField name="leave" type="event">
+  Fired when a client leaves the channel.
+</ResponseField>
+
+## Multiple Listeners
+
+Combine different listener types on a single channel:
+
+```javascript
+const channel = supabase
+  .channel('combined')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'messages' },
+    (payload) => console.log('DB change:', payload)
+  )
+  .on(
+    'broadcast',
+    { event: 'typing' },
+    (payload) => console.log('User typing:', payload)
+  )
+  .on(
+    'presence',
+    { event: 'sync' },
+    () => console.log('Presence synced')
+  )
+  .subscribe()
+```
+
+## Row Level Security
+
+Realtime respects Row Level Security policies:
+
+```sql
+-- Users can only receive updates for their own data
+CREATE POLICY "Users can listen to own data"
+  ON messages
+  FOR SELECT
+  USING (auth.uid() = user_id);
+```
+
+<Info>
+  Only changes that the user has permission to see will be sent through Realtime.
+</Info>
+
+## Enable Realtime
+
+Enable Realtime for a table:
+
+```sql
+-- Enable Realtime for a table
+ALTER TABLE countries REPLICA IDENTITY FULL;
+
+-- Or via the Supabase Dashboard:
+-- Database > Replication > Select your table > Enable Realtime
+```
+
+<Warning>
+  Tables must have `REPLICA IDENTITY FULL` enabled to receive UPDATE and DELETE events with old values.
+</Warning>
+
+## Connection Management
+
+### Connection States
+
+```javascript
+const channel = supabase.channel('my-channel')
+
+channel.subscribe((status, err) => {
+  switch (status) {
+    case 'SUBSCRIBED':
+      console.log('Connected and subscribed')
+      break
+    case 'TIMED_OUT':
+      console.log('Connection timed out')
+      break
+    case 'CLOSED':
+      console.log('Connection closed')
+      break
+    case 'CHANNEL_ERROR':
+      console.log('Channel error:', err)
+      break
+  }
+})
+```
+
+### Reconnection
+
+The client automatically handles reconnection:
+
+```javascript
+const supabase = createClient(url, key, {
+  realtime: {
+    params: {
+      eventsPerSecond: 10 // Rate limit
+    }
+  }
+})
+```
+
+## Rate Limiting
+
+Realtime has built-in rate limiting:
+
+- **Free tier**: 200 concurrent connections, 10 events per second per channel
+- **Pro tier**: 500 concurrent connections, 100 events per second per channel
+- **Enterprise**: Custom limits
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Unsubscribe when done">
+    Always clean up subscriptions to prevent memory leaks:
+    
+    ```javascript
+    useEffect(() => {
+      const channel = supabase.channel('my-channel').subscribe()
+      
+      return () => {
+        supabase.removeChannel(channel)
+      }
+    }, [])
+    ```
+  </Accordion>
+  
+  <Accordion title="Use filters to reduce traffic">
+    Filter changes at the database level to reduce unnecessary data:
+    
+    ```javascript
+    filter: 'user_id=eq.' + userId
+    ```
+  </Accordion>
+  
+  <Accordion title="Implement error handling">
+    Handle connection errors gracefully:
+    
+    ```javascript
+    channel.subscribe((status, err) => {
+      if (status === 'CHANNEL_ERROR') {
+        console.error('Channel error:', err)
+      }
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Use presence for online status">
+    Presence automatically handles disconnections and is ideal for online/offline status.
+  </Accordion>
+</AccordionGroup>
+
+## Limits and Quotas
+
+### Connection Limits
+
+| Plan | Max Concurrent Connections | Events/Second per Channel |
+|------|---------------------------|---------------------------|
+| Free | 200 | 10 |
+| Pro | 500 | 100 |
+| Enterprise | Custom | Custom |
+
+### Message Size
+
+- Maximum payload size: 256 KB
+- Maximum channel name length: 255 characters
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Channels" icon="tower-broadcast" href="/api/realtime/channels">
+    Learn about channel management
+  </Card>
+  
+  <Card title="Subscriptions" icon="rss" href="/api/realtime/subscriptions">
+    Master subscription patterns
+  </Card>
+</CardGroup>

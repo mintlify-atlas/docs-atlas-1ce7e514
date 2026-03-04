@@ -1,0 +1,275 @@
+---
+title: 'Examples Overview'
+description: 'Explore working examples and code samples for Supabase'
+icon: 'code'
+---
+
+Browse our collection of examples and code samples to learn Supabase patterns and best practices. All examples are production-ready and include complete source code.
+
+## Quick Links
+
+<CardGroup cols={2}>
+  <Card title="Authentication Examples" icon="shield" href="/examples/auth">
+    OAuth, MFA, magic links, and more
+  </Card>
+  <Card title="Database Examples" icon="database" href="/examples/database">
+    Queries, relations, RLS, and triggers
+  </Card>
+  <Card title="Storage Examples" icon="upload" href="/examples/storage">
+    File uploads, image transforms, and CDN
+  </Card>
+  <Card title="AI Examples" icon="brain" href="/examples/ai">
+    Vector search, embeddings, and AI integrations
+  </Card>
+</CardGroup>
+
+## Example Repository Structure
+
+All examples are available in our [GitHub repository](https://github.com/supabase/supabase/tree/master/examples) organized by feature:
+
+```
+examples/
+├── auth/              # Authentication examples
+├── database/          # Database operations
+├── storage/           # File storage
+├── realtime/          # Real-time features
+├── ai/                # AI and vectors
+├── edge-functions/    # Edge Functions
+├── user-management/   # User profiles
+└── todo-list/         # Todo applications
+```
+
+## Featured Examples
+
+### Full-Stack Applications
+
+<AccordionGroup>
+  <Accordion title="Next.js Todo App">
+    A complete todo application with authentication, database operations, and RLS.
+    
+    **Features:**
+    - User authentication
+    - CRUD operations
+    - Row Level Security
+    - Real-time updates
+    
+    **Tech Stack:** Next.js, TypeScript, Tailwind CSS
+    
+    [View on GitHub](https://github.com/supabase/supabase/tree/master/examples/todo-list/nextjs-todo-list)
+  </Accordion>
+  
+  <Accordion title="Next.js User Management">
+    User profile management with avatar uploads and authentication.
+    
+    **Features:**
+    - Email/password auth
+    - Profile management
+    - Avatar uploads
+    - Storage integration
+    
+    **Tech Stack:** Next.js App Router, Server Actions
+    
+    [View on GitHub](https://github.com/supabase/supabase/tree/master/examples/user-management/nextjs-user-management)
+  </Accordion>
+  
+  <Accordion title="Slack Clone">
+    Real-time chat application with channels and presence.
+    
+    **Features:**
+    - Real-time messaging
+    - Multiple channels
+    - Online presence
+    - Message history
+    
+    **Tech Stack:** Next.js, Realtime subscriptions
+    
+    [View on GitHub](https://github.com/supabase/supabase/tree/master/examples/slack-clone)
+  </Accordion>
+</AccordionGroup>
+
+### Framework-Specific Examples
+
+<Tabs>
+  <Tab title="Next.js">
+    - [Next.js Authentication](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+    - [Next.js User Management](https://github.com/supabase/supabase/tree/master/examples/user-management/nextjs-user-management)
+    - [Next.js Todo List](https://github.com/supabase/supabase/tree/master/examples/todo-list/nextjs-todo-list)
+    - [Next.js Slack Clone](https://github.com/supabase/supabase/tree/master/examples/slack-clone/nextjs-slack-clone)
+  </Tab>
+  
+  <Tab title="React">
+    - [React User Management](https://github.com/supabase/supabase/tree/master/examples/user-management/react-user-management)
+    - [React Authentication](https://github.com/supabase/supabase/tree/master/examples/auth)
+  </Tab>
+  
+  <Tab title="Vue">
+    - [Vue 3 User Management](https://github.com/supabase/supabase/tree/master/examples/user-management/vue3-user-management)
+    - [Vue 3 Todo List](https://github.com/supabase/supabase/tree/master/examples/todo-list/nuxt3-todo-list)
+  </Tab>
+  
+  <Tab title="Flutter">
+    - [Flutter User Management](https://github.com/supabase/supabase/tree/master/examples/user-management/flutter-user-management)
+    - [Flutter MFA](https://github.com/supabase/supabase/tree/master/examples/auth/flutter-mfa)
+    - [Flutter Google Auth](https://github.com/supabase/supabase/tree/master/examples/auth/flutter-native-google-auth)
+  </Tab>
+  
+  <Tab title="SvelteKit">
+    - [SvelteKit User Management](https://github.com/supabase/supabase/tree/master/examples/user-management/sveltekit-user-management)
+    - [SvelteKit Authentication](https://github.com/supabase/supabase/tree/master/examples/auth/sveltekit)
+  </Tab>
+</Tabs>
+
+## By Use Case
+
+### Authentication
+
+<CardGroup cols={3}>
+  <Card title="Email/Password" icon="envelope">
+    Basic email and password authentication
+  </Card>
+  <Card title="OAuth" icon="share-nodes">
+    Google, GitHub, and social providers
+  </Card>
+  <Card title="Magic Links" icon="wand-magic-sparkles">
+    Passwordless authentication
+  </Card>
+  <Card title="MFA" icon="shield-halved">
+    Multi-factor authentication
+  </Card>
+  <Card title="Phone Auth" icon="phone">
+    SMS-based authentication
+  </Card>
+  <Card title="SSO" icon="building">
+    Enterprise single sign-on
+  </Card>
+</CardGroup>
+
+### Database
+
+<CardGroup cols={3}>
+  <Card title="CRUD Operations" icon="database">
+    Create, read, update, delete
+  </Card>
+  <Card title="Relations" icon="diagram-project">
+    Join tables and foreign keys
+  </Card>
+  <Card title="RLS Policies" icon="lock">
+    Row level security
+  </Card>
+  <Card title="Triggers" icon="bolt">
+    Database triggers
+  </Card>
+  <Card title="Functions" icon="function">
+    Postgres functions
+  </Card>
+  <Card title="Full-Text Search" icon="magnifying-glass">
+    Search functionality
+  </Card>
+</CardGroup>
+
+### Storage
+
+<CardGroup cols={3}>
+  <Card title="File Upload" icon="upload">
+    Basic file uploads
+  </Card>
+  <Card title="Image Transform" icon="image">
+    On-the-fly transformations
+  </Card>
+  <Card title="Resumable Upload" icon="arrows-rotate">
+    Large file uploads
+  </Card>
+  <Card title="Private Files" icon="lock">
+    Access control
+  </Card>
+  <Card title="CDN" icon="cloud">
+    Global distribution
+  </Card>
+  <Card title="Metadata" icon="tags">
+    File metadata
+  </Card>
+</CardGroup>
+
+## Running the Examples
+
+### Prerequisites
+
+1. A Supabase account ([sign up here](https://supabase.com/dashboard))
+2. Node.js 16+ or Flutter 3+ installed
+3. Basic knowledge of the framework
+
+### Setup Steps
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/supabase/supabase.git
+    cd supabase/examples/[example-name]
+    ```
+  </Step>
+  
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    # or
+    flutter pub get
+    ```
+  </Step>
+  
+  <Step title="Configure environment">
+    Copy `.env.example` to `.env.local` and add your Supabase credentials:
+    
+    ```bash
+    NEXT_PUBLIC_SUPABASE_URL=your-project-url
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+    ```
+  </Step>
+  
+  <Step title="Run the database migrations">
+    Most examples include SQL files. Run them in your Supabase SQL Editor.
+  </Step>
+  
+  <Step title="Start the development server">
+    ```bash
+    npm run dev
+    # or
+    flutter run
+    ```
+  </Step>
+</Steps>
+
+## Community Examples
+
+Explore examples built by the community:
+
+- [Awesome Supabase](https://github.com/lyqht/awesome-supabase) - Curated list of projects
+- [Supabase Community](https://github.com/supabase-community) - Community-built tools
+- [Made with Supabase](https://www.madewithsupabase.com/) - Showcase of apps
+
+## Contributing
+
+Want to contribute an example? We welcome contributions!
+
+1. Fork the [Supabase repository](https://github.com/supabase/supabase)
+2. Create your example in the appropriate directory
+3. Include a comprehensive README
+4. Submit a pull request
+
+See our [Contributing Guide](https://github.com/supabase/supabase/blob/master/CONTRIBUTING.md) for details.
+
+## Get Help
+
+<CardGroup cols={2}>
+  <Card title="Discord Community" icon="discord" href="https://discord.supabase.com">
+    Join our Discord for help and discussion
+  </Card>
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/supabase/supabase/discussions">
+    Ask questions and share ideas
+  </Card>
+  <Card title="Documentation" icon="book" href="/introduction">
+    Read the full documentation
+  </Card>
+  <Card title="Tutorials" icon="graduation-cap" href="/guides/building-a-todo-app">
+    Follow step-by-step tutorials
+  </Card>
+</CardGroup>

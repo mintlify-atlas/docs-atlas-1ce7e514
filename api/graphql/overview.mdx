@@ -1,0 +1,528 @@
+---
+title: 'GraphQL Overview'
+description: 'Query your Supabase database using GraphQL'
+icon: 'diagram-project'
+---
+
+## Introduction
+
+Supabase provides a GraphQL API powered by [pg_graphql](https://github.com/supabase/pg_graphql), allowing you to query your PostgreSQL database using GraphQL. The API is automatically generated from your database schema.
+
+<Info>
+  GraphQL support in Supabase is currently in beta. The API is production-ready but may receive breaking changes.
+</Info>
+
+## Endpoint
+
+Your GraphQL API is available at:
+
+```
+https://<PROJECT_REF>.supabase.co/graphql/v1
+```
+
+## Authentication
+
+Authenticate requests using the same headers as the REST API:
+
+```graphql
+POST https://<PROJECT_REF>.supabase.co/graphql/v1
+Content-Type: application/json
+apikey: YOUR_ANON_KEY
+Authorization: Bearer YOUR_JWT_TOKEN
+
+{
+  "query": "query { ... }"
+}
+```
+
+<ParamField header="apikey" type="string" required>
+  Your Supabase API key.
+</ParamField>
+
+<ParamField header="Authorization" type="string">
+  Bearer token for authenticated requests.
+</ParamField>
+
+## Basic Query
+
+Query your database using GraphQL syntax:
+
+```graphql
+query {
+  countriesCollection {
+    edges {
+      node {
+        id
+        name
+        code
+        capital
+      }
+    }
+  }
+}
+```
+
+### Response
+
+```json
+{
+  "data": {
+    "countriesCollection": {
+      "edges": [
+        {
+          "node": {
+            "id": 1,
+            "name": "United States",
+            "code": "US",
+            "capital": "Washington, D.C."
+          }
+        },
+        {
+          "node": {
+            "id": 2,
+            "name": "Canada",
+            "code": "CA",
+            "capital": "Ottawa"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+## Schema Reflection
+
+The GraphQL schema is automatically generated from your database schema. Each table becomes a collection type with the following structure:
+
+- `<table>Collection` - Query multiple rows
+- `<table>` - Query a single row (if primary key is provided)
+- `insert<Table>Collection` - Insert rows
+- `update<Table>Collection` - Update rows
+- `deleteFrom<Table>Collection` - Delete rows
+
+### Example Table
+
+```sql
+CREATE TABLE countries (
+  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL,
+  capital TEXT,
+  population BIGINT
+);
+```
+
+### Generated Types
+
+```graphql
+type Country {
+  id: BigInt!
+  name: String!
+  code: String!
+  capital: String
+  population: BigInt
+}
+
+type CountriesConnection {
+  edges: [CountriesEdge!]!
+  pageInfo: PageInfo!
+}
+
+type CountriesEdge {
+  node: Country!
+  cursor: String!
+}
+
+type Query {
+  countriesCollection(
+    first: Int
+    last: Int
+    before: Cursor
+    after: Cursor
+    filter: CountryFilter
+    orderBy: [CountryOrderBy!]
+  ): CountriesConnection
+}
+```
+
+## Filtering
+
+Filter results using the `filter` argument:
+
+```graphql
+query {
+  countriesCollection(
+    filter: {
+      name: { eq: "Albania" }
+    }
+  ) {
+    edges {
+      node {
+        id
+        name
+        capital
+      }
+    }
+  }
+}
+```
+
+### Filter Operators
+
+| Operator | Description | Example |
+|----------|-------------|--------|
+| `eq` | Equal | `{ name: { eq: "Albania" } }` |
+| `neq` | Not equal | `{ name: { neq: "Albania" } }` |
+| `gt` | Greater than | `{ population: { gt: 1000000 } }` |
+| `gte` | Greater than or equal | `{ population: { gte: 1000000 } }` |
+| `lt` | Less than | `{ population: { lt: 1000000 } }` |
+| `lte` | Less than or equal | `{ population: { lte: 1000000 } }` |
+| `in` | In list | `{ code: { in: ["US", "CA"] } }` |
+| `is` | Is null/not null | `{ capital: { is: null } }` |
+| `like` | Pattern match | `{ name: { like: "%United%" } }` |
+| `ilike` | Case-insensitive match | `{ name: { ilike: "%united%" } }` |
+
+### Combining Filters
+
+Use `and`, `or`, and `not` for complex filters:
+
+```graphql
+query {
+  countriesCollection(
+    filter: {
+      and: [
+        { population: { gt: 1000000 } },
+        { or: [
+          { name: { like: "%A%" } },
+          { code: { in: ["US", "CA"] } }
+        ]}
+      ]
+    }
+  ) {
+    edges {
+      node {
+        name
+        population
+      }
+    }
+  }
+}
+```
+
+## Ordering
+
+Sort results using the `orderBy` argument:
+
+```graphql
+query {
+  countriesCollection(
+    orderBy: [{ name: AscNullsLast }]
+  ) {
+    edges {
+      node {
+        name
+        population
+      }
+    }
+  }
+}
+```
+
+### Order Options
+
+- `AscNullsFirst` - Ascending with nulls first
+- `AscNullsLast` - Ascending with nulls last
+- `DescNullsFirst` - Descending with nulls first
+- `DescNullsLast` - Descending with nulls last
+
+### Multiple Columns
+
+```graphql
+orderBy: [
+  { name: AscNullsLast },
+  { population: DescNullsLast }
+]
+```
+
+## Pagination
+
+GraphQL uses cursor-based pagination:
+
+### First N Records
+
+```graphql
+query {
+  countriesCollection(first: 10) {
+    edges {
+      node {
+        name
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+}
+```
+
+<ParamField query="first" type="Int">
+  Number of records to return from the beginning.
+</ParamField>
+
+<ParamField query="after" type="Cursor">
+  Return records after this cursor.
+</ParamField>
+
+### Next Page
+
+```graphql
+query {
+  countriesCollection(
+    first: 10,
+    after: "WyJuYW1lIiwgIkFsYmFuaWEiXQ=="
+  ) {
+    edges {
+      node {
+        name
+      }
+    }
+  }
+}
+```
+
+### Last N Records
+
+```graphql
+query {
+  countriesCollection(last: 10) {
+    edges {
+      node {
+        name
+      }
+    }
+  }
+}
+```
+
+<ParamField query="last" type="Int">
+  Number of records to return from the end.
+</ParamField>
+
+<ParamField query="before" type="Cursor">
+  Return records before this cursor.
+</ParamField>
+
+## Relationships
+
+Query related data using foreign keys:
+
+```graphql
+query {
+  countriesCollection {
+    edges {
+      node {
+        id
+        name
+        citiesCollection {
+          edges {
+            node {
+              name
+              population
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Filtering Related Data
+
+```graphql
+query {
+  countriesCollection {
+    edges {
+      node {
+        name
+        citiesCollection(
+          filter: { population: { gt: 1000000 } }
+        ) {
+          edges {
+            node {
+              name
+              population
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Variables
+
+Use variables to make queries reusable:
+
+```graphql
+query GetCountry($code: String!) {
+  countriesCollection(
+    filter: { code: { eq: $code } }
+  ) {
+    edges {
+      node {
+        id
+        name
+        capital
+      }
+    }
+  }
+}
+```
+
+### Variables JSON
+
+```json
+{
+  "code": "US"
+}
+```
+
+## Fragments
+
+Reuse query parts with fragments:
+
+```graphql
+fragment CountryDetails on Country {
+  id
+  name
+  code
+  capital
+  population
+}
+
+query {
+  countriesCollection {
+    edges {
+      node {
+        ...CountryDetails
+        citiesCollection(first: 5) {
+          edges {
+            node {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Introspection
+
+Explore your schema using introspection:
+
+```graphql
+query {
+  __schema {
+    types {
+      name
+      kind
+    }
+  }
+}
+```
+
+### Get Type Details
+
+```graphql
+query {
+  __type(name: "Country") {
+    name
+    fields {
+      name
+      type {
+        name
+        kind
+      }
+    }
+  }
+}
+```
+
+## Row Level Security
+
+GraphQL respects your PostgreSQL Row Level Security policies:
+
+```sql
+CREATE POLICY "Users can read own data"
+  ON countries
+  FOR SELECT
+  USING (auth.uid() = user_id);
+```
+
+The GraphQL API will automatically apply these policies based on the authenticated user.
+
+## GraphQL Playground
+
+Access the GraphQL Playground in your project settings to explore your schema and test queries interactively.
+
+## Limitations
+
+<Warning>
+  - Mutations are in beta and may have limitations
+  - Some PostgreSQL features may not be fully supported
+  - Complex computed fields require custom functions
+</Warning>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Request only needed fields">
+    Only query the fields you need to reduce payload size:
+    
+    ```graphql
+    query {
+      countriesCollection {
+        edges {
+          node {
+            id
+            name
+          }
+        }
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Use pagination">
+    Always paginate large datasets using cursor-based pagination.
+  </Accordion>
+  
+  <Accordion title="Use variables">
+    Use GraphQL variables instead of string interpolation to prevent injection attacks.
+  </Accordion>
+  
+  <Accordion title="Enable RLS">
+    Always enable Row Level Security on your tables to protect your data.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Queries" icon="search" href="/api/graphql/queries">
+    Learn about advanced querying
+  </Card>
+  
+  <Card title="Mutations" icon="pen" href="/api/graphql/mutations">
+    Modify data with mutations
+  </Card>
+</CardGroup>

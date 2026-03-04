@@ -1,0 +1,593 @@
+---
+title: 'Build a Realtime Chat App'
+description: 'Create a real-time chat application with Supabase Realtime'
+icon: 'messages'
+---
+
+Build a fully functional real-time chat application with user presence, typing indicators, and instant message delivery using Supabase Realtime.
+
+## What You'll Build
+
+A real-time chat app featuring:
+- Instant message delivery
+- Online user presence
+- Typing indicators
+- Message history
+- User authentication
+- Channel-based conversations
+
+## Architecture
+
+This app uses:
+- **Supabase Auth** for user authentication
+- **Supabase Database** for message storage
+- **Supabase Realtime** for live updates
+- **Presence** for online status
+- **Broadcast** for typing indicators
+
+<Steps>
+
+<Step title="Create Your Project">
+
+1. Go to [supabase.com/dashboard](https://supabase.com/dashboard)
+2. Create a new project
+3. Wait for the database to be ready
+
+</Step>
+
+<Step title="Set Up Database Schema">
+
+Run this SQL in the SQL Editor:
+
+```sql
+-- Create messages table
+create table messages (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  user_id uuid references auth.users on delete cascade not null,
+  channel_id text not null,
+  content text not null,
+  constraint content_length check (char_length(content) > 0)
+);
+
+-- Create user profiles table
+create table profiles (
+  id uuid references auth.users on delete cascade primary key,
+  username text unique not null,
+  avatar_url text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  constraint username_length check (char_length(username) >= 3)
+);
+
+-- Enable Row Level Security
+alter table messages enable row level security;
+alter table profiles enable row level security;
+
+-- Messages policies
+create policy "Users can view messages in channels they have access to"
+  on messages for select
+  using (auth.role() = 'authenticated');
+
+create policy "Authenticated users can insert messages"
+  on messages for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can delete their own messages"
+  on messages for delete
+  using (auth.uid() = user_id);
+
+-- Profiles policies
+create policy "Profiles are viewable by everyone"
+  on profiles for select
+  using (true);
+
+create policy "Users can insert their own profile"
+  on profiles for insert
+  with check (auth.uid() = id);
+
+create policy "Users can update own profile"
+  on profiles for update
+  using (auth.uid() = id);
+
+-- Auto-create profile on signup
+create function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, username)
+  values (new.id, new.email);
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+-- Enable realtime
+alter publication supabase_realtime add table messages;
+alter publication supabase_realtime add table profiles;
+```
+
+</Step>
+
+<Step title="Enable Realtime in Dashboard">
+
+1. Go to **Database** → **Replication**
+2. Enable replication for:
+   - `messages` table
+   - `profiles` table
+3. Click **Save**
+
+</Step>
+
+<Step title="Set Up Your Next.js App">
+
+Create a new Next.js app:
+
+```bash
+npx create-next-app@latest realtime-chat
+cd realtime-chat
+```
+
+Install Supabase:
+
+```bash
+npm install @supabase/supabase-js
+```
+
+Create `.env.local`:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+</Step>
+
+<Step title="Create Supabase Client">
+
+Create `lib/supabase.ts`:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+export const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+export type Message = {
+  id: string
+  created_at: string
+  user_id: string
+  channel_id: string
+  content: string
+  profiles: {
+    username: string
+    avatar_url: string | null
+  }
+}
+```
+
+</Step>
+
+<Step title="Build the Chat Component">
+
+Create `components/Chat.tsx`:
+
+```typescript
+'use client'
+import { useEffect, useState, useRef } from 'react'
+import { supabase, type Message } from '@/lib/supabase'
+import { RealtimeChannel } from '@supabase/supabase-js'
+
+export default function Chat({ 
+  channelId, 
+  userId 
+}: { 
+  channelId: string
+  userId: string 
+}) {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [newMessage, setNewMessage] = useState('')
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([])
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set())
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const channelRef = useRef<RealtimeChannel | null>(null)
+
+  // Scroll to bottom
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    // Load initial messages
+    loadMessages()
+
+    // Set up realtime subscription
+    const channel = supabase
+      .channel(`room:${channelId}`)
+      // Listen for new messages
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `channel_id=eq.${channelId}`,
+        },
+        (payload) => {
+          loadMessages() // Reload to get profile data
+        }
+      )
+      // Track presence (online users)
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState()
+        const users = Object.keys(state)
+        setOnlineUsers(users)
+      })
+      .on('presence', { event: 'join' }, ({ key }) => {
+        console.log('User joined:', key)
+      })
+      .on('presence', { event: 'leave' }, ({ key }) => {
+        console.log('User left:', key)
+      })
+      // Listen for typing indicators
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload.userId !== userId) {
+          setTypingUsers((prev) => new Set([...prev, payload.userId]))
+          setTimeout(() => {
+            setTypingUsers((prev) => {
+              const next = new Set(prev)
+              next.delete(payload.userId)
+              return next
+            })
+          }, 3000)
+        }
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          // Track this user's presence
+          await channel.track({ user_id: userId, online_at: new Date().toISOString() })
+        }
+      })
+
+    channelRef.current = channel
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [channelId, userId])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const loadMessages = async () => {
+    const { data, error } = await supabase
+      .from('messages')
+      .select(`
+        *,
+        profiles (username, avatar_url)
+      `)
+      .eq('channel_id', channelId)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error('Error loading messages:', error)
+    } else {
+      setMessages(data as Message[])
+    }
+  }
+
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!newMessage.trim()) return
+
+    const { error } = await supabase
+      .from('messages')
+      .insert({
+        content: newMessage,
+        channel_id: channelId,
+        user_id: userId,
+      })
+
+    if (error) {
+      console.error('Error sending message:', error)
+    } else {
+      setNewMessage('')
+    }
+  }
+
+  const handleTyping = () => {
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { userId },
+      })
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-screen max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="bg-blue-500 text-white p-4">
+        <h1 className="text-2xl font-bold">Chat Room</h1>
+        <p className="text-sm">
+          {onlineUsers.length} user{onlineUsers.length !== 1 ? 's' : ''} online
+        </p>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={`flex ${
+              message.user_id === userId ? 'justify-end' : 'justify-start'
+            }`}
+          >
+            <div
+              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                message.user_id === userId
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-white text-gray-800'
+              }`}
+            >
+              {message.user_id !== userId && (
+                <p className="text-xs font-semibold mb-1">
+                  {message.profiles.username}
+                </p>
+              )}
+              <p>{message.content}</p>
+              <p className="text-xs mt-1 opacity-70">
+                {new Date(message.created_at).toLocaleTimeString()}
+              </p>
+            </div>
+          </div>
+        ))}
+        
+        {/* Typing indicator */}
+        {typingUsers.size > 0 && (
+          <div className="text-sm text-gray-500 italic">
+            Someone is typing...
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input */}
+      <form onSubmit={sendMessage} className="p-4 bg-white border-t">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyPress={handleTyping}
+            placeholder="Type a message..."
+            className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            type="submit"
+            className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+          >
+            Send
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+```
+
+</Step>
+
+<Step title="Create the Auth Flow">
+
+Create `app/page.tsx`:
+
+```typescript
+'use client'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import Chat from '@/components/Chat'
+import { User } from '@supabase/supabase-js'
+
+export default function Home() {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+
+  useEffect(() => {
+    // Check active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const { error } = await supabase.auth.signUp({ email, password })
+    if (error) alert(error.message)
+  }
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) alert(error.message)
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+  }
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>
+  }
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <div className="w-full max-w-md p-8 bg-white rounded-lg shadow">
+          <h1 className="text-2xl font-bold mb-6">Chat App</h1>
+          <form className="space-y-4">
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-4 py-2 border rounded-lg"
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2 border rounded-lg"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleSignIn}
+                className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg"
+              >
+                Sign In
+              </button>
+              <button
+                onClick={handleSignUp}
+                className="flex-1 px-4 py-2 bg-gray-200 rounded-lg"
+              >
+                Sign Up
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <Chat channelId="general" userId={user.id} />
+      <button
+        onClick={handleSignOut}
+        className="fixed top-4 right-4 px-4 py-2 bg-red-500 text-white rounded"
+      >
+        Sign Out
+      </button>
+    </div>
+  )
+}
+```
+
+</Step>
+
+<Step title="Run Your Chat App">
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+Open multiple browser windows at [http://localhost:3000](http://localhost:3000) to test real-time messaging!
+
+</Step>
+
+</Steps>
+
+## Key Features Explained
+
+### Postgres Changes
+
+Listens for new rows in the `messages` table:
+
+```typescript
+.on('postgres_changes', {
+  event: 'INSERT',
+  schema: 'public',
+  table: 'messages',
+  filter: `channel_id=eq.${channelId}`,
+}, callback)
+```
+
+### Presence
+
+Tracks online users in the channel:
+
+```typescript
+.on('presence', { event: 'sync' }, () => {
+  const state = channel.presenceState()
+  const users = Object.keys(state)
+  setOnlineUsers(users)
+})
+```
+
+### Broadcast
+
+Sends ephemeral messages (like typing indicators):
+
+```typescript
+channel.send({
+  type: 'broadcast',
+  event: 'typing',
+  payload: { userId },
+})
+```
+
+## Enhancements
+
+<AccordionGroup>
+  <Accordion title="Add message reactions">
+    Create a `reactions` table and use Realtime to sync reactions across clients.
+  </Accordion>
+  
+  <Accordion title="File sharing">
+    Integrate Supabase Storage to allow users to share images and files.
+  </Accordion>
+  
+  <Accordion title="Multiple channels">
+    Create a channels table and let users create/join different chat rooms.
+  </Accordion>
+  
+  <Accordion title="Direct messages">
+    Add 1-on-1 private messaging between users.
+  </Accordion>
+  
+  <Accordion title="Read receipts">
+    Track which messages have been read by each user.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Realtime Presence" icon="users" href="/realtime/presence">
+    Learn more about presence tracking
+  </Card>
+  <Card title="Broadcast" icon="tower-broadcast" href="/realtime/broadcast">
+    Master broadcast channels
+  </Card>
+  <Card title="Postgres Changes" icon="database" href="/realtime/postgres-changes">
+    Deep dive into database subscriptions
+  </Card>
+  <Card title="Storage" icon="upload" href="/guides/file-uploads">
+    Add file sharing to your chat
+  </Card>
+</CardGroup>

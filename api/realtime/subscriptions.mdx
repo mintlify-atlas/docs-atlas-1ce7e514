@@ -1,0 +1,524 @@
+---
+title: 'Realtime Subscriptions'
+description: 'Subscribe to database changes, broadcasts, and presence updates'
+icon: 'rss'
+---
+
+## Overview
+
+Subscriptions allow you to listen to real-time events in your Supabase application. This guide covers all subscription types and patterns.
+
+## Database Changes
+
+### Listen to All Events
+
+Subscribe to all INSERT, UPDATE, and DELETE operations:
+
+```javascript
+const subscription = supabase
+  .channel('schema-db-changes')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'countries'
+    },
+    (payload) => {
+      console.log('Change received!', payload)
+    }
+  )
+  .subscribe()
+```
+
+### Listen to INSERT Events
+
+Only receive notifications for new rows:
+
+```javascript
+const subscription = supabase
+  .channel('inserts')
+  .on(
+    'postgres_changes',
+    {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'messages'
+    },
+    (payload) => {
+      console.log('New message:', payload.new)
+    }
+  )
+  .subscribe()
+```
+
+### Listen to UPDATE Events
+
+Receive notifications when rows are updated:
+
+```javascript
+const subscription = supabase
+  .channel('updates')
+  .on(
+    'postgres_changes',
+    {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'users'
+    },
+    (payload) => {
+      console.log('Updated from:', payload.old)
+      console.log('Updated to:', payload.new)
+    }
+  )
+  .subscribe()
+```
+
+### Listen to DELETE Events
+
+Receive notifications when rows are deleted:
+
+```javascript
+const subscription = supabase
+  .channel('deletes')
+  .on(
+    'postgres_changes',
+    {
+      event: 'DELETE',
+      schema: 'public',
+      table: 'messages'
+    },
+    (payload) => {
+      console.log('Deleted row:', payload.old)
+    }
+  )
+  .subscribe()
+```
+
+## Filtering Subscriptions
+
+### Filter by Column Value
+
+Only receive changes for specific rows:
+
+```javascript
+const userId = '123'
+
+const subscription = supabase
+  .channel('user-messages')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'messages',
+      filter: `user_id=eq.${userId}`
+    },
+    (payload) => {
+      console.log('User message change:', payload)
+    }
+  )
+  .subscribe()
+```
+
+<ParamField path="filter" type="string">
+  Filter expression in the format `column=op.value`.
+  
+  Supported operators:
+  - `eq` - equals
+  - `neq` - not equals
+  - `lt` - less than
+  - `lte` - less than or equal
+  - `gt` - greater than
+  - `gte` - greater than or equal
+</ParamField>
+
+### Multiple Filters
+
+```javascript
+// Only for premium users in a specific room
+const subscription = supabase
+  .channel('premium-room')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'messages',
+      filter: `room_id=eq.${roomId}`
+    },
+    (payload) => {
+      if (payload.new.is_premium) {
+        console.log('Premium message:', payload.new)
+      }
+    }
+  )
+  .subscribe()
+```
+
+## Broadcast Subscriptions
+
+### Listen to Broadcasts
+
+Receive ephemeral messages from other clients:
+
+```javascript
+const subscription = supabase
+  .channel('room-1')
+  .on(
+    'broadcast',
+    { event: 'cursor-pos' },
+    (payload) => {
+      console.log('Cursor position:', payload)
+    }
+  )
+  .subscribe()
+```
+
+### Send Broadcasts
+
+Send messages to all subscribers:
+
+```javascript
+await subscription.send({
+  type: 'broadcast',
+  event: 'cursor-pos',
+  payload: { x: 100, y: 200, user: 'user-1' }
+})
+```
+
+### Receive Own Broadcasts
+
+By default, you don't receive your own broadcasts. Enable this:
+
+```javascript
+const channel = supabase.channel('room-1', {
+  config: {
+    broadcast: { self: true }
+  }
+})
+
+channel
+  .on('broadcast', { event: 'message' }, (payload) => {
+    console.log('Message (including own):', payload)
+  })
+  .subscribe()
+```
+
+## Presence Subscriptions
+
+### Track User Presence
+
+Share and sync state across clients:
+
+```javascript
+const channel = supabase.channel('online-users')
+
+channel
+  .on('presence', { event: 'sync' }, () => {
+    const state = channel.presenceState()
+    console.log('Online users:', Object.keys(state))
+  })
+  .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+    console.log('User joined:', key, newPresences)
+  })
+  .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+    console.log('User left:', key, leftPresences)
+  })
+  .subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await channel.track({
+        user_id: 'user-1',
+        online_at: new Date().toISOString()
+      })
+    }
+  })
+```
+
+### Presence Events
+
+<ResponseField name="sync" type="event">
+  Fired when presence state is in sync with the server.
+</ResponseField>
+
+<ResponseField name="join" type="event">
+  Fired when a new client joins.
+  
+  <Expandable title="payload properties">
+    <ResponseField name="key" type="string">
+      Unique identifier for the presence.
+    </ResponseField>
+    
+    <ResponseField name="newPresences" type="array">
+      Array of new presence states.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="leave" type="event">
+  Fired when a client leaves.
+  
+  <Expandable title="payload properties">
+    <ResponseField name="key" type="string">
+      Unique identifier for the presence.
+    </ResponseField>
+    
+    <ResponseField name="leftPresences" type="array">
+      Array of left presence states.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Update Presence State
+
+Update your presence state:
+
+```javascript
+await channel.track({
+  user_id: 'user-1',
+  status: 'typing',
+  last_active: new Date().toISOString()
+})
+```
+
+### Untrack Presence
+
+Remove your presence:
+
+```javascript
+await channel.untrack()
+```
+
+## Combined Subscriptions
+
+Subscribe to multiple event types on one channel:
+
+```javascript
+const channel = supabase
+  .channel('chat-room-1')
+  // Database changes
+  .on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'messages' },
+    (payload) => {
+      addMessage(payload.new)
+    }
+  )
+  // Typing indicators
+  .on(
+    'broadcast',
+    { event: 'typing' },
+    (payload) => {
+      showTypingIndicator(payload.user)
+    }
+  )
+  // Online users
+  .on(
+    'presence',
+    { event: 'sync' },
+    () => {
+      updateOnlineUsers(channel.presenceState())
+    }
+  )
+  .subscribe()
+```
+
+## React Patterns
+
+### useState Hook
+
+```javascript
+import { useEffect, useState } from 'react'
+
+function Messages() {
+  const [messages, setMessages] = useState([])
+  
+  useEffect(() => {
+    const channel = supabase
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          setMessages((current) => [...current, payload.new])
+        }
+      )
+      .subscribe()
+    
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+  
+  return (
+    <div>
+      {messages.map((msg) => (
+        <div key={msg.id}>{msg.text}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+### useReducer Hook
+
+```javascript
+import { useEffect, useReducer } from 'react'
+
+function messagesReducer(state, action) {
+  switch (action.type) {
+    case 'ADD':
+      return [...state, action.payload]
+    case 'UPDATE':
+      return state.map((msg) =>
+        msg.id === action.payload.id ? action.payload : msg
+      )
+    case 'DELETE':
+      return state.filter((msg) => msg.id !== action.payload.id)
+    default:
+      return state
+  }
+}
+
+function Messages() {
+  const [messages, dispatch] = useReducer(messagesReducer, [])
+  
+  useEffect(() => {
+    const channel = supabase
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => dispatch({ type: 'ADD', payload: payload.new })
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
+        (payload) => dispatch({ type: 'UPDATE', payload: payload.new })
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'messages' },
+        (payload) => dispatch({ type: 'DELETE', payload: payload.old })
+      )
+      .subscribe()
+    
+    return () => supabase.removeChannel(channel)
+  }, [])
+  
+  return <MessageList messages={messages} />
+}
+```
+
+## Performance Optimization
+
+### Debounce Updates
+
+```javascript
+import { debounce } from 'lodash'
+
+const debouncedUpdate = debounce((payload) => {
+  updateUI(payload)
+}, 300)
+
+supabase
+  .channel('updates')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'analytics' },
+    debouncedUpdate
+  )
+  .subscribe()
+```
+
+### Throttle Updates
+
+```javascript
+import { throttle } from 'lodash'
+
+const throttledUpdate = throttle((payload) => {
+  updateUI(payload)
+}, 1000)
+
+supabase
+  .channel('high-frequency')
+  .on(
+    'broadcast',
+    { event: 'cursor' },
+    throttledUpdate
+  )
+  .subscribe()
+```
+
+## Error Handling
+
+### Handle Subscription Errors
+
+```javascript
+const channel = supabase
+  .channel('messages')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'messages' },
+    (payload) => {
+      try {
+        processMessage(payload)
+      } catch (error) {
+        console.error('Error processing message:', error)
+      }
+    }
+  )
+  .subscribe((status, err) => {
+    if (status === 'CHANNEL_ERROR') {
+      console.error('Subscription error:', err)
+      // Implement retry logic
+    }
+  })
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always unsubscribe">
+    Prevent memory leaks by cleaning up subscriptions:
+    
+    ```javascript
+    useEffect(() => {
+      const channel = supabase.channel('my-channel').subscribe()
+      return () => supabase.removeChannel(channel)
+    }, [])
+    ```
+  </Accordion>
+  
+  <Accordion title="Use filters to reduce traffic">
+    Filter at the database level instead of in your app:
+    
+    ```javascript
+    filter: `user_id=eq.${userId}`
+    ```
+  </Accordion>
+  
+  <Accordion title="Implement error handling">
+    Always handle subscription errors gracefully.
+  </Accordion>
+  
+  <Accordion title="Throttle high-frequency events">
+    Use throttling for cursor movements, typing indicators, etc.
+  </Accordion>
+  
+  <Accordion title="Enable RLS">
+    Use Row Level Security to control who can subscribe to what data.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Channels" icon="tower-broadcast" href="/api/realtime/channels">
+    Learn about channel management
+  </Card>
+  
+  <Card title="Client Libraries" icon="code" href="/api/javascript">
+    Use Realtime with client SDKs
+  </Card>
+</CardGroup>

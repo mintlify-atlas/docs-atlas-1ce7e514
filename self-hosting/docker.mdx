@@ -1,0 +1,548 @@
+---
+title: Docker Installation
+description: Deploy Supabase using Docker Compose in minutes
+---
+
+This guide walks you through deploying a complete Supabase stack using Docker Compose. This is the recommended method for self-hosting Supabase.
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+<Steps>
+  <Step title="Install Git">
+    ```bash
+    # Ubuntu/Debian
+    sudo apt-get install git
+    
+    # macOS
+    brew install git
+    
+    # Verify installation
+    git --version
+    ```
+  </Step>
+  
+  <Step title="Install Docker">
+    ```bash
+    # Ubuntu/Debian
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    
+    # Verify installation
+    docker --version
+    docker compose version
+    ```
+    
+    <Info>
+      Docker Compose v2 is required (included with Docker Engine 20.10+). The command is `docker compose`, not `docker-compose`.
+    </Info>
+  </Step>
+</Steps>
+
+## Quick Start
+
+<Steps>
+  <Step title="Clone Repository">
+    ```bash
+    # Clone Supabase repository
+    git clone --depth 1 https://github.com/supabase/supabase
+    
+    # Navigate to Docker directory
+    cd supabase/docker
+    ```
+  </Step>
+  
+  <Step title="Copy Environment File">
+    ```bash
+    # Copy example environment file
+    cp .env.example .env
+    ```
+    
+    <Warning>
+      The default `.env.example` file contains insecure default passwords. **Never use these in production!**
+    </Warning>
+  </Step>
+  
+  <Step title="Generate Secrets">
+    Generate secure passwords and JWT secrets:
+    
+    ```bash
+    # Use the provided script
+    sh ./utils/generate-keys.sh
+    ```
+    
+    Or generate manually:
+    
+    ```bash
+    # Generate random passwords (32 characters)
+    openssl rand -base64 32
+    
+    # Generate JWT secret (minimum 32 characters)
+    openssl rand -base64 32
+    ```
+    
+    Update your `.env` file with generated values:
+    - `POSTGRES_PASSWORD`
+    - `JWT_SECRET`
+    - `ANON_KEY` (generate at https://supabase.com/docs/guides/self-hosting/docker#api-keys)
+    - `SERVICE_ROLE_KEY`
+    - `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD`
+  </Step>
+  
+  <Step title="Start Supabase">
+    ```bash
+    # Pull latest images
+    docker compose pull
+    
+    # Start all services
+    docker compose up -d
+    
+    # View logs
+    docker compose logs -f
+    ```
+    
+    Wait for all services to become healthy (1-2 minutes).
+  </Step>
+  
+  <Step title="Access Dashboard">
+    Open your browser to:
+    
+    - **Studio Dashboard**: http://localhost:8000
+    - **Database**: localhost:5432
+    - **API Gateway**: http://localhost:8000
+    
+    Default credentials:
+    - Username: `supabase` (or your `DASHBOARD_USERNAME`)
+    - Password: From your `.env` file
+  </Step>
+</Steps>
+
+<Check>
+  You now have a fully functional Supabase instance running locally!
+</Check>
+
+## Docker Compose Configuration
+
+The `docker-compose.yml` file defines all Supabase services:
+
+### Included Services
+
+```yaml
+services:
+  # Supabase Studio - Dashboard at :3000
+  studio:
+    image: supabase/studio:2026.02.16-sha-26c615c
+    
+  # Kong API Gateway - Public endpoint at :8000
+  kong:
+    image: kong:2.8.1
+    ports:
+      - "8000:8000"  # HTTP
+      - "8443:8443"  # HTTPS
+      
+  # GoTrue Authentication - :9999
+  auth:
+    image: supabase/gotrue:v2.186.0
+    
+  # PostgREST API - :3000
+  rest:
+    image: postgrest/postgrest:v14.5
+    
+  # Realtime Server - :4000
+  realtime:
+    image: supabase/realtime:v2.76.5
+    
+  # Storage API - :5000
+  storage:
+    image: supabase/storage-api:v1.37.8
+    
+  # Image Proxy - :5001
+  imgproxy:
+    image: darthsim/imgproxy:v3.30.1
+    
+  # Postgres Metadata - :8080
+  meta:
+    image: supabase/postgres-meta:v0.95.2
+    
+  # Edge Functions Runtime - :8081
+  functions:
+    image: supabase/edge-runtime:v1.70.3
+    
+  # Analytics/Logging - :4000
+  analytics:
+    image: supabase/logflare:1.31.2
+    
+  # PostgreSQL Database - :5432
+  db:
+    image: supabase/postgres:15.8.1.085
+    
+  # Vector Log Pipeline - :9001
+  vector:
+    image: timberio/vector:0.53.0-alpine
+    
+  # Connection Pooler - :6543
+  supavisor:
+    image: supabase/supavisor:2.7.4
+    ports:
+      - "5432:5432"  # Session mode
+      - "6543:6543"  # Transaction mode
+```
+
+### Service Versions
+
+Latest stable versions as of February 2026:
+
+- **Studio**: 2026.02.16
+- **Auth (GoTrue)**: v2.186.0  
+- **PostgREST**: v14.5
+- **Realtime**: v2.76.5
+- **Storage**: v1.37.8
+- **Edge Runtime**: v1.70.3
+- **PostgreSQL**: 15.8.1
+
+See [versions.md](https://github.com/supabase/supabase/blob/master/docker/versions.md) for complete version history.
+
+## Environment Configuration
+
+Key environment variables in `.env`:
+
+### Secrets (MUST CHANGE)
+
+```bash
+# PostgreSQL password for 'postgres' user
+POSTGRES_PASSWORD=your-super-secret-and-long-postgres-password
+
+# JWT secret for signing tokens (min 32 characters)
+JWT_SECRET=your-super-secret-jwt-token-with-at-least-32-characters-long
+
+# Anonymous (public) JWT key
+ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Service role (admin) JWT key
+SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Dashboard login credentials
+DASHBOARD_USERNAME=supabase
+DASHBOARD_PASSWORD=this_password_is_insecure_and_should_be_updated
+```
+
+### URLs
+
+```bash
+# Public URL for API access
+SUPABASE_PUBLIC_URL=http://localhost:8000
+
+# External URL for OAuth callbacks
+API_EXTERNAL_URL=http://localhost:8000
+
+# Site URL for authentication redirects
+SITE_URL=http://localhost:3000
+```
+
+### Database
+
+```bash
+POSTGRES_HOST=db
+POSTGRES_DB=postgres
+POSTGRES_PORT=5432
+```
+
+### Storage
+
+```bash
+# Use 'file' for local storage or configure S3
+STORAGE_BACKEND=file
+
+# Directory name for local file storage
+GLOBAL_S3_BUCKET=supabase-storage
+```
+
+For S3-compatible storage, see [S3 Configuration](#s3-storage).
+
+## Managing Services
+
+### Start/Stop Services
+
+```bash
+# Start all services
+docker compose up -d
+
+# Stop all services (keeps data)
+docker compose stop
+
+# Start specific service
+docker compose up -d studio
+
+# Restart all services
+docker compose restart
+```
+
+### View Logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f db
+docker compose logs -f auth
+
+# Last 100 lines
+docker compose logs --tail=100 db
+```
+
+### Check Service Health
+
+```bash
+# View service status
+docker compose ps
+
+# Check specific service health
+docker compose ps db
+```
+
+### Update Services
+
+```bash
+# Pull latest images
+docker compose pull
+
+# Recreate containers with new images
+docker compose up -d
+
+# Remove old images
+docker image prune
+```
+
+## Data Persistence
+
+Docker volumes store persistent data:
+
+```bash
+# List volumes
+docker volume ls | grep supabase
+
+# Inspect database volume
+docker volume inspect supabase_db-config
+
+# Backup database volume
+docker run --rm -v supabase_db-data:/data -v $(pwd):/backup \
+  ubuntu tar czf /backup/db-backup.tar.gz /data
+```
+
+### Volume Locations
+
+```
+./volumes/
+├── db/
+│   ├── data/           # PostgreSQL data directory
+│   ├── realtime.sql    # Realtime migrations
+│   ├── roles.sql       # Database roles
+│   └── jwt.sql         # JWT configuration
+├── storage/            # Uploaded files
+├── functions/          # Edge Functions code
+├── snippets/           # SQL snippets
+├── api/
+│   └── kong.yml        # Kong configuration
+└── logs/
+    └── vector.yml      # Log pipeline config
+```
+
+## Accessing Services
+
+### Database Access
+
+**Via Supavisor (Recommended)**:
+
+```bash
+# Connection pooling - Transaction mode
+psql "postgresql://postgres:your-password@localhost:6543/postgres"
+```
+
+**Direct Connection**:
+
+```bash
+psql "postgresql://postgres:your-password@localhost:5432/postgres"
+```
+
+<Warning>
+  Use connection pooling (port 6543) for web applications to avoid connection exhaustion.
+</Warning>
+
+### API Endpoints
+
+All APIs are accessible through Kong gateway:
+
+```bash
+# REST API
+curl http://localhost:8000/rest/v1/your_table \
+  -H "apikey: YOUR_ANON_KEY"
+
+# Auth API
+curl http://localhost:8000/auth/v1/signup \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password"}'
+
+# Storage API
+curl http://localhost:8000/storage/v1/object/list/bucket-name \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+### Studio Dashboard
+
+Access the web dashboard at http://localhost:8000.
+
+<Tip>
+  Bookmark http://localhost:8000 for quick access to your local Supabase Studio.
+</Tip>
+
+## Advanced Configuration
+
+### S3 Storage
+
+Use S3-compatible storage instead of local files:
+
+```bash
+# Start with S3 configuration
+docker compose -f docker-compose.yml -f docker-compose.s3.yml up -d
+```
+
+Update `.env` with S3 credentials:
+
+```bash
+STORAGE_BACKEND=s3
+GLOBAL_S3_BUCKET=your-bucket-name
+GLOBAL_S3_ENDPOINT=https://s3.amazonaws.com
+GLOBAL_S3_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+```
+
+### Custom Domain
+
+Configure Kong for custom domain:
+
+```bash
+# Update .env
+SUPABASE_PUBLIC_URL=https://api.yourdomain.com
+API_EXTERNAL_URL=https://api.yourdomain.com
+```
+
+Use nginx or Caddy as reverse proxy:
+
+```nginx
+server {
+    listen 80;
+    server_name api.yourdomain.com;
+    
+    location / {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+### HTTPS/SSL
+
+Enable SSL in Kong:
+
+1. Generate or obtain SSL certificates
+2. Uncomment SSL configuration in `docker-compose.yml`
+3. Mount certificates in Kong container
+4. Restart services
+
+```yaml
+kong:
+  volumes:
+    - ./volumes/api/server.crt:/home/kong/server.crt:ro
+    - ./volumes/api/server.key:/home/kong/server.key:ro
+  environment:
+    KONG_SSL_CERT: /home/kong/server.crt
+    KONG_SSL_CERT_KEY: /home/kong/server.key
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Services Won't Start" icon="circle-xmark">
+    Check logs for errors:
+    
+    ```bash
+    docker compose logs
+    ```
+    
+    Common issues:
+    - Port conflicts (8000, 5432 already in use)
+    - Insufficient memory (less than 4GB available)
+    - Docker daemon not running
+  </Accordion>
+
+  <Accordion title="Database Connection Fails" icon="database">
+    Verify Postgres is healthy:
+    
+    ```bash
+    docker compose ps db
+    docker compose logs db
+    ```
+    
+    Check credentials in `.env` match connection string.
+  </Accordion>
+
+  <Accordion title="Studio Shows 'Invalid JWT'" icon="key">
+    Regenerate JWT keys:
+    
+    ```bash
+    sh ./utils/generate-keys.sh
+    ```
+    
+    Update `ANON_KEY` and `SERVICE_ROLE_KEY` in `.env`, then restart:
+    
+    ```bash
+    docker compose restart
+    ```
+  </Accordion>
+
+  <Accordion title="Storage Upload Fails" icon="upload">
+    Check storage volume permissions:
+    
+    ```bash
+    ls -la volumes/storage
+    chmod -R 777 volumes/storage
+    docker compose restart storage
+    ```
+  </Accordion>
+
+  <Accordion title="High Memory Usage" icon="memory">
+    Reduce Postgres shared_buffers:
+    
+    ```bash
+    # volumes/db/postgresql.conf
+    shared_buffers = 256MB  # Default is 512MB
+    ```
+    
+    Restart database:
+    ```bash
+    docker compose restart db
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/self-hosting/configuration">
+    Learn about environment variables and advanced config
+  </Card>
+  <Card title="Security" icon="shield" href="/self-hosting/security">
+    Secure your installation for production
+  </Card>
+  <Card title="Updates" icon="arrow-rotate-right" href="/self-hosting/updates">
+    Keep your stack up-to-date
+  </Card>
+  <Card title="Backup" icon="hard-drive" href="/self-hosting/configuration#database-backups">
+    Set up automated backups
+  </Card>
+</CardGroup>

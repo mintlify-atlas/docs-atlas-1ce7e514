@@ -1,0 +1,622 @@
+---
+title: Security
+description: Secure your self-hosted Supabase installation for production use
+---
+
+The default Supabase Docker configuration is **not secure for production**. This guide covers essential security measures you must implement before deploying.
+
+<Warning>
+  **Never deploy with default configuration!** Default passwords and secrets are publicly known and will be exploited.
+</Warning>
+
+## Pre-Deployment Checklist
+
+<Steps>
+  <Step title="Change All Secrets">
+    Replace every default password and secret in `.env`:
+    
+    ```bash
+    # Generate new secrets
+    sh ./utils/generate-keys.sh
+    
+    # Verify no defaults remain
+    grep -E "your-super-secret|insecure|example" .env
+    ```
+  </Step>
+  
+  <Step title="Configure HTTPS">
+    Never run production without TLS encryption. Use a reverse proxy with SSL certificates.
+  </Step>
+  
+  <Step title="Enable Firewall">
+    Restrict network access to only required ports.
+  </Step>
+  
+  <Step title="Set Up Backups">
+    Implement automated database backups with off-site storage.
+  </Step>
+  
+  <Step title="Configure SMTP">
+    Set up transactional email for password resets and notifications.
+  </Step>
+</Steps>
+
+## Secrets Management
+
+### Critical Secrets
+
+These must be changed before production:
+
+<AccordionGroup>
+  <Accordion title="POSTGRES_PASSWORD" icon="database">
+    **Risk**: Root database access
+    
+    **Generate**:
+    ```bash
+    openssl rand -base64 32
+    ```
+    
+    **Requirements**:
+    - Minimum 32 characters
+    - Mix of letters, numbers, special characters
+    - Unique per installation
+    - Store in password manager
+  </Accordion>
+
+  <Accordion title="JWT_SECRET" icon="key">
+    **Risk**: Token forgery, authentication bypass
+    
+    **Generate**:
+    ```bash
+    openssl rand -base64 64 | tr -d '\n'
+    ```
+    
+    **Requirements**:
+    - Minimum 32 characters (64+ recommended)
+    - Keep absolutely secret
+    - Never expose in client code
+    - Rotating requires regenerating all JWT keys
+  </Accordion>
+
+  <Accordion title="DASHBOARD_PASSWORD" icon="gauge">
+    **Risk**: Administrative access to Studio
+    
+    **Generate**:
+    ```bash
+    openssl rand -base64 24
+    ```
+    
+    **Requirements**:
+    - Strong password (20+ characters)
+    - Enable 2FA if available
+    - Rotate quarterly
+  </Accordion>
+
+  <Accordion title="SERVICE_ROLE_KEY" icon="crown">
+    **Risk**: Bypasses Row Level Security
+    
+    **Generate**: Use [JWT generator](https://supabase.com/docs/guides/self-hosting/docker#api-keys) with your `JWT_SECRET`
+    
+    **Requirements**:
+    - Only use server-side
+    - Never expose in frontend code
+    - Never commit to repositories
+    - Rotate if compromised
+  </Accordion>
+</AccordionGroup>
+
+### Secret Rotation
+
+Regularly rotate sensitive credentials:
+
+```bash
+# 1. Generate new secrets
+NEW_JWT_SECRET=$(openssl rand -base64 64)
+
+# 2. Generate new API keys with new secret
+# Visit https://supabase.com/docs/guides/self-hosting/docker#api-keys
+
+# 3. Update .env file
+sed -i "s/JWT_SECRET=.*/JWT_SECRET=${NEW_JWT_SECRET}/" .env
+
+# 4. Update applications with new keys
+
+# 5. Restart services
+docker compose restart auth rest realtime
+```
+
+## Network Security
+
+### Firewall Configuration
+
+**Allow only necessary ports**:
+
+```bash
+# UFW (Ubuntu/Debian)
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+
+# SSH access
+sudo ufw allow 22/tcp
+
+# HTTPS for reverse proxy
+sudo ufw allow 443/tcp
+
+# Optional: HTTP (redirect to HTTPS)
+sudo ufw allow 80/tcp
+
+# Enable firewall
+sudo ufw enable
+```
+
+**Block direct access to services**:
+
+```bash
+# Only allow localhost access to Kong
+sudo ufw deny 8000/tcp
+
+# Block Postgres from external access
+sudo ufw deny 5432/tcp
+```
+
+### Reverse Proxy with HTTPS
+
+Use nginx or Caddy as a TLS termination proxy:
+
+<Tabs>
+  <Tab title="nginx">
+    ```nginx /etc/nginx/sites-available/supabase
+    server {
+        listen 80;
+        server_name api.yourdomain.com;
+        return 301 https://$server_name$request_uri;
+    }
+    
+    server {
+        listen 443 ssl http2;
+        server_name api.yourdomain.com;
+        
+        # SSL certificates (use Let's Encrypt)
+        ssl_certificate /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/api.yourdomain.com/privkey.pem;
+        
+        # Modern SSL configuration
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers on;
+        
+        # Security headers
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Frame-Options DENY;
+        add_header X-Content-Type-Options nosniff;
+        add_header X-XSS-Protection "1; mode=block";
+        
+        # Proxy to Kong
+        location / {
+            proxy_pass http://localhost:8000;
+            proxy_http_version 1.1;
+            
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            proxy_cache_bypass $http_upgrade;
+        }
+    }
+    ```
+    
+    Enable and restart:
+    ```bash
+    sudo ln -s /etc/nginx/sites-available/supabase /etc/nginx/sites-enabled/
+    sudo nginx -t
+    sudo systemctl reload nginx
+    ```
+  </Tab>
+  
+  <Tab title="Caddy">
+    ```caddy /etc/caddy/Caddyfile
+    api.yourdomain.com {
+        # Automatic HTTPS via Let's Encrypt
+        reverse_proxy localhost:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+        
+        # Security headers
+        header {
+            Strict-Transport-Security "max-age=31536000; includeSubDomains"
+            X-Frame-Options DENY
+            X-Content-Type-Options nosniff
+            X-XSS-Protection "1; mode=block"
+            -Server
+        }
+    }
+    ```
+    
+    Reload Caddy:
+    ```bash
+    sudo systemctl reload caddy
+    ```
+  </Tab>
+  
+  <Tab title="Traefik">
+    ```yaml docker-compose.override.yml
+    version: '3.8'
+    
+    services:
+      traefik:
+        image: traefik:v2.10
+        ports:
+          - "80:80"
+          - "443:443"
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock:ro
+          - ./traefik.yml:/traefik.yml:ro
+          - ./acme.json:/acme.json
+        networks:
+          - default
+      
+      kong:
+        labels:
+          - "traefik.enable=true"
+          - "traefik.http.routers.kong.rule=Host(`api.yourdomain.com`)"
+          - "traefik.http.routers.kong.tls=true"
+          - "traefik.http.routers.kong.tls.certresolver=letsencrypt"
+    ```
+  </Tab>
+</Tabs>
+
+### SSL Certificates
+
+Use Let's Encrypt for free SSL certificates:
+
+```bash
+# Install Certbot
+sudo apt-get update
+sudo apt-get install certbot python3-certbot-nginx
+
+# Generate certificate
+sudo certbot --nginx -d api.yourdomain.com
+
+# Auto-renewal
+sudo certbot renew --dry-run
+```
+
+## Database Security
+
+### Row Level Security (RLS)
+
+Always enable RLS on user-facing tables:
+
+```sql
+-- Enable RLS on table
+ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
+
+-- Users can only read their own posts
+CREATE POLICY "Users can read own posts"
+  ON posts FOR SELECT
+  USING (auth.uid() = author_id);
+
+-- Users can only insert their own posts
+CREATE POLICY "Users can insert own posts"
+  ON posts FOR INSERT
+  WITH CHECK (auth.uid() = author_id);
+
+-- Users can only update their own posts
+CREATE POLICY "Users can update own posts"
+  ON posts FOR UPDATE
+  USING (auth.uid() = author_id)
+  WITH CHECK (auth.uid() = author_id);
+
+-- Users can only delete their own posts
+CREATE POLICY "Users can delete own posts"
+  ON posts FOR DELETE
+  USING (auth.uid() = author_id);
+```
+
+<Warning>
+  Tables without RLS policies are accessible to anyone with the `service_role` key!
+</Warning>
+
+### Postgres Security
+
+```sql
+-- Revoke unnecessary permissions
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+
+-- Limit function execution
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION your_safe_function TO authenticated;
+
+-- Disable dangerous extensions
+DROP EXTENSION IF EXISTS plpythonu;
+DROP EXTENSION IF EXISTS plperlu;
+
+-- Enable query logging for auditing
+ALTER DATABASE postgres SET log_statement = 'all';
+ALTER DATABASE postgres SET log_duration = on;
+```
+
+### Connection Security
+
+```conf postgresql.conf
+# Require SSL for connections
+ssl = on
+ssl_cert_file = '/etc/ssl/certs/server.crt'
+ssl_key_file = '/etc/ssl/private/server.key'
+
+# Disable weak ciphers
+ssl_ciphers = 'HIGH:MEDIUM:+3DES:!aNULL'
+ssl_prefer_server_ciphers = on
+
+# Connection limits
+max_connections = 100
+```
+
+```conf pg_hba.conf
+# Require SSL and password
+hostssl all all 0.0.0.0/0 md5
+hostssl all all ::/0 md5
+
+# Reject non-SSL
+hostnossl all all 0.0.0.0/0 reject
+```
+
+## Authentication Security
+
+### Password Policies
+
+Enforce strong passwords in GoTrue:
+
+```bash .env
+# Minimum password length
+GOTRUE_PASSWORD_MIN_LENGTH=12
+
+# Require strong passwords
+GOTRUE_PASSWORD_REQUIRED_CHARACTERS=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*
+```
+
+### Rate Limiting
+
+Protect against brute force attacks:
+
+```yaml volumes/api/kong.yml
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 5
+      hour: 100
+      policy: local
+```
+
+### Multi-Factor Authentication
+
+Enable MFA for administrative accounts:
+
+```bash .env
+# Enable TOTP MFA
+MFA_TOTP_ENROLL_ENABLED=true
+MFA_TOTP_VERIFY_ENABLED=true
+
+# Limit MFA factors
+MFA_MAX_ENROLLED_FACTORS=10
+```
+
+### OAuth Security
+
+Secure OAuth configurations:
+
+```bash
+# Restrict redirect URLs
+ADDITIONAL_REDIRECT_URLS=https://app.yourdomain.com,https://staging.yourdomain.com
+
+# Disable signups if using OAuth only
+DISABLE_SIGNUP=true
+
+# Verify email for OAuth users
+GOTRUE_EXTERNAL_EMAIL_ENABLED=true
+GOTRUE_MAILER_AUTOCONFIRM=false
+```
+
+## Storage Security
+
+### Bucket Policies
+
+Restrict file access with policies:
+
+```sql
+-- Create private bucket
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', false);
+
+-- Users can upload their own avatar
+CREATE POLICY "Users can upload avatar"
+  ON storage.objects FOR INSERT
+  WITH CHECK (
+    bucket_id = 'avatars' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Users can read their own avatar
+CREATE POLICY "Users can read avatar"
+  ON storage.objects FOR SELECT
+  USING (
+    bucket_id = 'avatars' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+```
+
+### File Upload Restrictions
+
+```bash .env
+# Limit file size (50MB)
+FILE_SIZE_LIMIT=52428800
+
+# Restrict MIME types
+ALLOWED_MIME_TYPES=image/png,image/jpeg,image/gif,application/pdf
+```
+
+## Monitoring & Auditing
+
+### Audit Logging
+
+Track security events:
+
+```sql
+-- Create audit log table
+CREATE TABLE audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  action TEXT NOT NULL,
+  table_name TEXT,
+  record_id BIGINT,
+  old_data JSONB,
+  new_data JSONB,
+  ip_address INET,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Audit trigger function
+CREATE OR REPLACE FUNCTION audit_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO audit_log (user_id, action, table_name, record_id, old_data, new_data)
+  VALUES (
+    auth.uid(),
+    TG_OP,
+    TG_TABLE_NAME,
+    NEW.id,
+    to_jsonb(OLD),
+    to_jsonb(NEW)
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Apply to sensitive tables
+CREATE TRIGGER audit_users
+  AFTER INSERT OR UPDATE OR DELETE ON users
+  FOR EACH ROW EXECUTE FUNCTION audit_trigger();
+```
+
+### Failed Login Monitoring
+
+```sql
+-- Track failed login attempts
+CREATE TABLE failed_logins (
+  id BIGSERIAL PRIMARY KEY,
+  email TEXT,
+  ip_address INET,
+  attempted_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Alert on multiple failures
+CREATE OR REPLACE FUNCTION check_failed_logins()
+RETURNS TRIGGER AS $$
+DECLARE
+  failure_count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO failure_count
+  FROM failed_logins
+  WHERE email = NEW.email
+    AND attempted_at > NOW() - INTERVAL '15 minutes';
+  
+  IF failure_count >= 5 THEN
+    -- Block or alert
+    RAISE EXCEPTION 'Too many failed login attempts';
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+## Incident Response
+
+### Security Breach Procedure
+
+<Steps>
+  <Step title="Contain the Breach">
+    - Immediately rotate all secrets
+    - Block compromised IP addresses
+    - Revoke compromised API keys
+    - Disable affected user accounts
+  </Step>
+  
+  <Step title="Assess Impact">
+    - Review audit logs
+    - Identify affected data
+    - Check for data exfiltration
+    - Document timeline
+  </Step>
+  
+  <Step title="Remediate">
+    - Apply security patches
+    - Fix vulnerabilities
+    - Restore from clean backup if needed
+    - Update security policies
+  </Step>
+  
+  <Step title="Notify Stakeholders">
+    - Alert affected users
+    - Report to authorities if required
+    - Update security documentation
+  </Step>
+</Steps>
+
+### Emergency Access Revocation
+
+```bash
+# Revoke all active sessions
+docker exec supabase-db psql -U postgres -d postgres <<EOF
+DELETE FROM auth.sessions;
+DELETE FROM auth.refresh_tokens;
+EOF
+
+# Rotate JWT secret
+sh ./utils/generate-keys.sh
+
+# Restart auth service
+docker compose restart auth
+```
+
+## Security Checklist
+
+Before going to production:
+
+- [ ] All default passwords changed
+- [ ] Strong, unique secrets generated
+- [ ] HTTPS enabled with valid SSL certificate
+- [ ] Firewall configured
+- [ ] Database backups automated
+- [ ] RLS enabled on all user tables
+- [ ] SMTP configured for email
+- [ ] OAuth providers verified
+- [ ] File upload restrictions set
+- [ ] Rate limiting configured
+- [ ] Monitoring and alerts set up
+- [ ] Audit logging enabled
+- [ ] Incident response plan documented
+- [ ] Regular security updates scheduled
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Updates" icon="shield-check" href="/self-hosting/updates">
+    Keep your stack secure with regular updates
+  </Card>
+  <Card title="Backups" icon="hard-drive" href="/self-hosting/configuration#database-backups">
+    Implement backup and recovery
+  </Card>
+  <Card title="Monitoring" icon="chart-line">
+    Set up security monitoring
+  </Card>
+  <Card title="Compliance" icon="file-certificate">
+    Meet regulatory requirements
+  </Card>
+</CardGroup>

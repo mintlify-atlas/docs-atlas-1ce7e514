@@ -1,0 +1,500 @@
+---
+title: 'Realtime Channels'
+description: 'Create and manage Realtime channels'
+icon: 'tower-broadcast'
+---
+
+## Overview
+
+Channels are the core concept in Supabase Realtime. They provide isolated communication streams for different features of your application.
+
+## Creating Channels
+
+### Basic Channel
+
+Create a channel with a unique name:
+
+```javascript
+const channel = supabase.channel('room-1')
+```
+
+<ParamField path="name" type="string" required>
+  Unique identifier for the channel. Can include letters, numbers, and hyphens.
+</ParamField>
+
+### Channel with Options
+
+Configure channel behavior:
+
+```javascript
+const channel = supabase.channel('room-1', {
+  config: {
+    broadcast: { self: true },
+    presence: { key: 'user-id' }
+  }
+})
+```
+
+<ParamField path="options.config.broadcast" type="object">
+  Broadcast configuration.
+  
+  <Expandable title="broadcast properties">
+    <ParamField path="self" type="boolean" default="false">
+      Whether to receive your own broadcast messages.
+    </ParamField>
+    
+    <ParamField path="ack" type="boolean" default="false">
+      Request acknowledgment for broadcast messages.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="options.config.presence" type="object">
+  Presence configuration.
+  
+  <Expandable title="presence properties">
+    <ParamField path="key" type="string">
+      Custom key to use for presence state (defaults to random UUID).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Subscribing to Channels
+
+### Subscribe
+
+Activate the channel connection:
+
+```javascript
+const channel = supabase
+  .channel('room-1')
+  .subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      console.log('Channel is ready!')
+    }
+  })
+```
+
+### Subscribe with Error Handling
+
+```javascript
+const channel = supabase
+  .channel('room-1')
+  .subscribe((status, err) => {
+    switch (status) {
+      case 'SUBSCRIBED':
+        console.log('Successfully subscribed to channel')
+        break
+      case 'TIMED_OUT':
+        console.error('Connection timed out')
+        break
+      case 'CLOSED':
+        console.log('Channel closed')
+        break
+      case 'CHANNEL_ERROR':
+        console.error('Channel error:', err)
+        break
+    }
+  })
+```
+
+## Channel States
+
+### Connection States
+
+<ResponseField name="SUBSCRIBED" type="status">
+  Channel is connected and ready.
+</ResponseField>
+
+<ResponseField name="TIMED_OUT" type="status">
+  Connection attempt timed out.
+</ResponseField>
+
+<ResponseField name="CLOSED" type="status">
+  Channel has been closed.
+</ResponseField>
+
+<ResponseField name="CHANNEL_ERROR" type="status">
+  An error occurred with the channel.
+</ResponseField>
+
+### Check Channel State
+
+```javascript
+const state = channel.state
+console.log('Channel state:', state)
+```
+
+## Unsubscribing
+
+### Remove Single Channel
+
+```javascript
+await supabase.removeChannel(channel)
+```
+
+### Remove All Channels
+
+```javascript
+await supabase.removeAllChannels()
+```
+
+### Unsubscribe in React
+
+```javascript
+import { useEffect } from 'react'
+
+function MyComponent() {
+  useEffect(() => {
+    const channel = supabase
+      .channel('room-1')
+      .subscribe()
+    
+    // Cleanup on component unmount
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+  
+  return <div>My Component</div>
+}
+```
+
+## Channel Naming
+
+### Best Practices
+
+```javascript
+// Good - descriptive and specific
+supabase.channel('chat-room-123')
+supabase.channel('user-notifications-456')
+supabase.channel('game-lobby-xyz')
+
+// Avoid - too generic
+supabase.channel('channel1')
+supabase.channel('test')
+```
+
+### Scoped Channels
+
+Organize channels by feature and ID:
+
+```javascript
+// Chat rooms
+const chatChannel = supabase.channel(`chat:${roomId}`)
+
+// User-specific notifications
+const notifChannel = supabase.channel(`notifications:${userId}`)
+
+// Game sessions
+const gameChannel = supabase.channel(`game:${sessionId}`)
+```
+
+## Multiple Listeners
+
+Add multiple event listeners to a single channel:
+
+```javascript
+const channel = supabase
+  .channel('multi-feature')
+  // Listen to database changes
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'messages' },
+    (payload) => console.log('Message:', payload)
+  )
+  // Listen to broadcasts
+  .on(
+    'broadcast',
+    { event: 'typing' },
+    (payload) => console.log('Typing:', payload)
+  )
+  // Listen to presence
+  .on(
+    'presence',
+    { event: 'sync' },
+    () => console.log('Presence synced')
+  )
+  .subscribe()
+```
+
+## Private Channels
+
+Implement private channels using RLS:
+
+```sql
+-- Only allow users to join their own channels
+CREATE POLICY "Users can only subscribe to own channel"
+  ON realtime.messages
+  FOR SELECT
+  USING (
+    channel_name = 'user:' || auth.uid()::text
+  );
+```
+
+```javascript
+// Client code
+const userId = session.user.id
+const channel = supabase.channel(`user:${userId}`)
+```
+
+## Channel Events
+
+### System Events
+
+Listen to channel lifecycle events:
+
+```javascript
+const channel = supabase.channel('room-1')
+
+channel.on('system', {}, (payload) => {
+  console.log('System event:', payload)
+})
+```
+
+## Broadcasting to Channels
+
+### Send Messages
+
+Broadcast messages to all subscribers:
+
+```javascript
+const channel = supabase.channel('room-1')
+
+await channel.send({
+  type: 'broadcast',
+  event: 'message',
+  payload: { text: 'Hello everyone!' }
+})
+```
+
+### Broadcast with Acknowledgment
+
+```javascript
+const channel = supabase.channel('room-1', {
+  config: { broadcast: { ack: true } }
+})
+
+const response = await channel.send({
+  type: 'broadcast',
+  event: 'message',
+  payload: { text: 'Hello!' }
+})
+
+if (response === 'ok') {
+  console.log('Message delivered')
+}
+```
+
+## Performance Optimization
+
+### Throttle Updates
+
+Limit the rate of updates:
+
+```javascript
+import { throttle } from 'lodash'
+
+const sendPosition = throttle((x, y) => {
+  channel.send({
+    type: 'broadcast',
+    event: 'cursor-pos',
+    payload: { x, y }
+  })
+}, 100) // Maximum once per 100ms
+```
+
+### Debounce Updates
+
+Delay updates until activity stops:
+
+```javascript
+import { debounce } from 'lodash'
+
+const sendTyping = debounce(() => {
+  channel.send({
+    type: 'broadcast',
+    event: 'typing',
+    payload: { user: 'user-1' }
+  })
+}, 500) // Wait 500ms after last keystroke
+```
+
+## Error Handling
+
+### Handle Connection Errors
+
+```javascript
+const channel = supabase
+  .channel('room-1')
+  .subscribe((status, err) => {
+    if (status === 'CHANNEL_ERROR') {
+      console.error('Failed to connect:', err)
+      // Implement retry logic
+      setTimeout(() => {
+        channel.subscribe()
+      }, 5000)
+    }
+  })
+```
+
+### Handle Timeout
+
+```javascript
+let timeoutId
+
+const channel = supabase
+  .channel('room-1')
+  .subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      clearTimeout(timeoutId)
+    } else if (status === 'TIMED_OUT') {
+      console.error('Connection timed out, retrying...')
+      timeoutId = setTimeout(() => {
+        channel.subscribe()
+      }, 3000)
+    }
+  })
+```
+
+## Channel Patterns
+
+### Chat Room
+
+```javascript
+function createChatRoom(roomId) {
+  const channel = supabase
+    .channel(`chat:${roomId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
+      (payload) => {
+        displayMessage(payload.new)
+      }
+    )
+    .on(
+      'broadcast',
+      { event: 'typing' },
+      (payload) => {
+        showTypingIndicator(payload.user)
+      }
+    )
+    .on(
+      'presence',
+      { event: 'sync' },
+      () => {
+        updateOnlineUsers(channel.presenceState())
+      }
+    )
+    .subscribe()
+  
+  return channel
+}
+```
+
+### Collaborative Editing
+
+```javascript
+function createCollaborativeEditor(documentId) {
+  const channel = supabase
+    .channel(`doc:${documentId}`)
+    .on(
+      'broadcast',
+      { event: 'cursor' },
+      (payload) => {
+        updateRemoteCursor(payload)
+      }
+    )
+    .on(
+      'broadcast',
+      { event: 'change' },
+      (payload) => {
+        applyRemoteChange(payload)
+      }
+    )
+    .on(
+      'presence',
+      { event: 'sync' },
+      () => {
+        updateCollaborators(channel.presenceState())
+      }
+    )
+    .subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await channel.track({
+          user_id: currentUser.id,
+          name: currentUser.name
+        })
+      }
+    })
+  
+  return channel
+}
+```
+
+### Live Dashboard
+
+```javascript
+function createLiveDashboard() {
+  const channel = supabase
+    .channel('analytics-dashboard')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'analytics_events' },
+      (payload) => {
+        updateDashboard(payload)
+      }
+    )
+    .subscribe()
+  
+  return channel
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use descriptive channel names">
+    Name channels based on their purpose and scope:
+    
+    ```javascript
+    supabase.channel(`chat-room-${roomId}`)
+    supabase.channel(`user-notifications-${userId}`)
+    ```
+  </Accordion>
+  
+  <Accordion title="Clean up on unmount">
+    Always unsubscribe when components unmount:
+    
+    ```javascript
+    useEffect(() => {
+      const channel = supabase.channel('my-channel').subscribe()
+      return () => supabase.removeChannel(channel)
+    }, [])
+    ```
+  </Accordion>
+  
+  <Accordion title="Implement reconnection logic">
+    Handle disconnections gracefully with retry logic.
+  </Accordion>
+  
+  <Accordion title="Throttle high-frequency updates">
+    Use throttling or debouncing for cursor positions, typing indicators, etc.
+  </Accordion>
+  
+  <Accordion title="Use RLS for private channels">
+    Implement Row Level Security to control channel access.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Subscriptions" icon="rss" href="/api/realtime/subscriptions">
+    Learn about subscription patterns
+  </Card>
+  
+  <Card title="Client Libraries" icon="code" href="/api/javascript">
+    Use Realtime with client SDKs
+  </Card>
+</CardGroup>

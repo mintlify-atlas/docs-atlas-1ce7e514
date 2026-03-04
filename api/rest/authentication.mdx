@@ -1,0 +1,393 @@
+---
+title: 'Authentication'
+description: 'Authenticate REST API requests with Supabase Auth'
+icon: 'lock'
+---
+
+## Overview
+
+Supabase REST API supports multiple authentication methods to secure your endpoints. Authentication is handled through API keys and JSON Web Tokens (JWTs).
+
+## API Keys
+
+Supabase provides two types of API keys:
+
+### Anon Key (Public)
+
+The anon key is safe to use in browser and mobile applications. It respects Row Level Security (RLS) policies.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+<ParamField header="apikey" type="string" required>
+  Your public anon key from the project settings.
+</ParamField>
+
+<Warning>
+  The anon key should only be used with proper RLS policies in place. Never expose the service role key in client applications.
+</Warning>
+
+### Service Role Key (Private)
+
+The service role key bypasses Row Level Security and should only be used in server environments.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries' \
+  -H "apikey: YOUR_SERVICE_ROLE_KEY"
+```
+
+<ParamField header="apikey" type="string" required>
+  Your service role key from the project settings.
+</ParamField>
+
+<Danger>
+  **Never expose the service role key** in client-side code, version control, or public repositories. It has full access to your database.
+</Danger>
+
+## User Authentication
+
+### Sign Up
+
+Create a new user account.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/auth/v1/signup' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "example@email.com",
+    "password": "example-password"
+  }'
+```
+
+<ParamField body="email" type="string" required>
+  User's email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password (minimum 6 characters).
+</ParamField>
+
+<ParamField body="data" type="object">
+  Optional user metadata.
+</ParamField>
+
+#### Response
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 3600,
+  "refresh_token": "v1.MXpZlZ9lXhyQKJ...",
+  "user": {
+    "id": "7f87f57e-6f46-4d5f-b3a9-0c9a6e0c5f1a",
+    "email": "example@email.com",
+    "role": "authenticated",
+    "created_at": "2024-03-04T10:00:00.000Z"
+  }
+}
+```
+
+<ResponseField name="access_token" type="string">
+  JWT access token for authenticated requests.
+</ResponseField>
+
+<ResponseField name="refresh_token" type="string">
+  Token used to refresh the access token.
+</ResponseField>
+
+<ResponseField name="expires_in" type="number">
+  Time in seconds until the access token expires.
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  User information object.
+</ResponseField>
+
+### Sign In
+
+Sign in an existing user.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/auth/v1/token?grant_type=password' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "example@email.com",
+    "password": "example-password"
+  }'
+```
+
+<ParamField body="email" type="string" required>
+  User's email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password.
+</ParamField>
+
+#### Response
+
+Returns the same structure as sign up with access token and user data.
+
+### Using the Access Token
+
+Once you have an access token, include it in the `Authorization` header:
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token format: `Bearer <access_token>`
+</ParamField>
+
+### Refresh Token
+
+Refresh an expired access token.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/auth/v1/token?grant_type=refresh_token' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "v1.MXpZlZ9lXhyQKJ..."
+  }'
+```
+
+<ParamField body="refresh_token" type="string" required>
+  The refresh token from the sign in response.
+</ParamField>
+
+### Sign Out
+
+Invalidate the current session.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/auth/v1/logout' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+## OAuth Providers
+
+### Initiate OAuth Flow
+
+Redirect users to an OAuth provider:
+
+```bash
+GET https://<PROJECT_REF>.supabase.co/auth/v1/authorize?provider=google
+```
+
+<ParamField query="provider" type="string" required>
+  OAuth provider name: `google`, `github`, `gitlab`, `azure`, `facebook`, `discord`, etc.
+</ParamField>
+
+<ParamField query="redirect_to" type="string">
+  URL to redirect to after authentication.
+</ParamField>
+
+<ParamField query="scopes" type="string">
+  Space-separated OAuth scopes to request.
+</ParamField>
+
+### Supported Providers
+
+- Google
+- GitHub
+- GitLab
+- Bitbucket
+- Azure
+- Facebook
+- Twitter
+- Discord
+- Slack
+- Spotify
+- LinkedIn
+- And more...
+
+## Magic Link Authentication
+
+Send a passwordless sign-in link via email.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/auth/v1/magiclink' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "example@email.com"
+  }'
+```
+
+<ParamField body="email" type="string" required>
+  User's email address.
+</ParamField>
+
+<ParamField body="options" type="object">
+  <Expandable title="options properties">
+    <ParamField body="redirectTo" type="string">
+      URL to redirect to after clicking the magic link.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Phone Authentication
+
+Authenticate users via SMS OTP.
+
+### Send OTP
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/auth/v1/otp' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "+1234567890"
+  }'
+```
+
+<ParamField body="phone" type="string" required>
+  User's phone number in E.164 format.
+</ParamField>
+
+### Verify OTP
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/auth/v1/verify' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "+1234567890",
+    "token": "123456",
+    "type": "sms"
+  }'
+```
+
+<ParamField body="phone" type="string" required>
+  User's phone number.
+</ParamField>
+
+<ParamField body="token" type="string" required>
+  6-digit OTP code.
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  Verification type: `sms` or `phone_change`.
+</ParamField>
+
+## Row Level Security (RLS)
+
+Row Level Security works seamlessly with JWT authentication. The user's JWT claims are available in PostgreSQL policies.
+
+### Example RLS Policy
+
+```sql
+-- Users can only read their own data
+CREATE POLICY "Users can read own data"
+  ON users
+  FOR SELECT
+  USING (auth.uid() = id);
+
+-- Users can only insert their own data
+CREATE POLICY "Users can insert own data"
+  ON users
+  FOR INSERT
+  WITH CHECK (auth.uid() = id);
+```
+
+### Accessing JWT Claims
+
+Access user claims in your policies:
+
+```sql
+-- Get the user's ID
+auth.uid()
+
+-- Get the user's email
+auth.email()
+
+-- Get the user's role
+auth.role()
+
+-- Get custom JWT claims
+auth.jwt() ->> 'custom_claim'
+```
+
+## Session Management
+
+### Get Current User
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/auth/v1/user' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Update User
+
+```bash
+curl -X PUT 'https://<PROJECT_REF>.supabase.co/auth/v1/user' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "new@email.com",
+    "password": "new-password",
+    "data": {
+      "display_name": "John Doe"
+    }
+  }'
+```
+
+<ParamField body="email" type="string">
+  New email address.
+</ParamField>
+
+<ParamField body="password" type="string">
+  New password.
+</ParamField>
+
+<ParamField body="data" type="object">
+  User metadata to update.
+</ParamField>
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always use HTTPS">
+    Never send API keys or tokens over unencrypted connections.
+  </Accordion>
+  
+  <Accordion title="Implement RLS policies">
+    Always enable Row Level Security on your tables and create appropriate policies.
+  </Accordion>
+  
+  <Accordion title="Rotate service role key">
+    Regularly rotate your service role key if it's been exposed.
+  </Accordion>
+  
+  <Accordion title="Use short-lived tokens">
+    Configure appropriate token expiration times in your auth settings.
+  </Accordion>
+  
+  <Accordion title="Validate on the server">
+    Never trust client-side validation alone. Always validate on the server with RLS.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Operations" icon="database" href="/api/rest/database">
+    Perform CRUD operations with authentication
+  </Card>
+  
+  <Card title="Row Level Security" icon="shield" href="/docs/guides/auth/row-level-security">
+    Learn about RLS policies
+  </Card>
+</CardGroup>

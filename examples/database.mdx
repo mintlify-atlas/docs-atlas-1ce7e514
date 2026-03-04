@@ -1,0 +1,610 @@
+---
+title: 'Database Examples'
+description: 'Code examples for database operations with Supabase'
+icon: 'database'
+---
+
+Explore database examples covering CRUD operations, relations, Row Level Security, triggers, functions, and advanced queries.
+
+## CRUD Operations
+
+### Select Data
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(url, key)
+
+// Select all columns
+const { data, error } = await supabase
+  .from('posts')
+  .select('*')
+
+// Select specific columns
+const { data } = await supabase
+  .from('posts')
+  .select('id, title, author_id')
+
+// Select with filters
+const { data } = await supabase
+  .from('posts')
+  .select('*')
+  .eq('author_id', userId)
+  .order('created_at', { ascending: false })
+  .limit(10)
+
+// Select with text search
+const { data } = await supabase
+  .from('posts')
+  .select('*')
+  .textSearch('title', 'supabase', {
+    type: 'websearch',
+    config: 'english',
+  })
+
+// Select with range
+const { data } = await supabase
+  .from('posts')
+  .select('*')
+  .range(0, 9) // Get first 10 rows
+```
+
+### Insert Data
+
+```typescript
+// Insert single row
+const { data, error } = await supabase
+  .from('posts')
+  .insert({
+    title: 'Hello World',
+    content: 'This is my first post',
+    author_id: userId,
+  })
+  .select()
+  .single()
+
+// Insert multiple rows
+const { data, error } = await supabase
+  .from('posts')
+  .insert([
+    { title: 'Post 1', content: 'Content 1' },
+    { title: 'Post 2', content: 'Content 2' },
+  ])
+  .select()
+
+// Upsert (insert or update)
+const { data, error } = await supabase
+  .from('posts')
+  .upsert({
+    id: 1,
+    title: 'Updated Title',
+    content: 'Updated content',
+  })
+  .select()
+```
+
+### Update Data
+
+```typescript
+// Update with filter
+const { data, error } = await supabase
+  .from('posts')
+  .update({ title: 'New Title' })
+  .eq('id', postId)
+  .select()
+
+// Update multiple rows
+const { data, error } = await supabase
+  .from('posts')
+  .update({ status: 'published' })
+  .in('id', [1, 2, 3])
+  .select()
+
+// Increment a value
+const { data, error } = await supabase.rpc('increment_views', {
+  post_id: postId,
+})
+```
+
+### Delete Data
+
+```typescript
+// Delete with filter
+const { error } = await supabase
+  .from('posts')
+  .delete()
+  .eq('id', postId)
+
+// Delete multiple rows
+const { error } = await supabase
+  .from('posts')
+  .delete()
+  .in('id', [1, 2, 3])
+
+// Delete all rows (be careful!)
+const { error } = await supabase
+  .from('posts')
+  .delete()
+  .neq('id', 0) // This deletes everything
+```
+
+## Relations and Joins
+
+### One-to-Many
+
+```typescript
+// Get posts with author information
+const { data } = await supabase
+  .from('posts')
+  .select(`
+    *,
+    author:profiles(
+      id,
+      username,
+      avatar_url
+    )
+  `)
+
+// Get user with all their posts
+const { data } = await supabase
+  .from('profiles')
+  .select(`
+    *,
+    posts(
+      id,
+      title,
+      created_at
+    )
+  `)
+  .eq('id', userId)
+  .single()
+```
+
+### Many-to-Many
+
+```typescript
+// Get posts with tags (through junction table)
+const { data } = await supabase
+  .from('posts')
+  .select(`
+    *,
+    post_tags(
+      tags(
+        id,
+        name
+      )
+    )
+  `)
+
+// Get tag with all posts
+const { data } = await supabase
+  .from('tags')
+  .select(`
+    *,
+    post_tags(
+      posts(
+        id,
+        title
+      )
+    )
+  `)
+  .eq('id', tagId)
+```
+
+### Nested Relations
+
+```typescript
+// Get posts with author and comments
+const { data } = await supabase
+  .from('posts')
+  .select(`
+    *,
+    author:profiles(*),
+    comments(
+      id,
+      content,
+      author:profiles(
+        username,
+        avatar_url
+      )
+    )
+  `)
+```
+
+## Filtering
+
+### Comparison Operators
+
+```typescript
+// Equal
+const { data } = await supabase.from('posts').select().eq('status', 'published')
+
+// Not equal
+const { data } = await supabase.from('posts').select().neq('status', 'draft')
+
+// Greater than
+const { data } = await supabase.from('posts').select().gt('views', 1000)
+
+// Greater than or equal
+const { data } = await supabase.from('posts').select().gte('views', 1000)
+
+// Less than
+const { data } = await supabase.from('posts').select().lt('views', 1000)
+
+// Less than or equal
+const { data } = await supabase.from('posts').select().lte('views', 1000)
+
+// In array
+const { data } = await supabase.from('posts').select().in('status', ['published', 'archived'])
+
+// Pattern matching
+const { data } = await supabase.from('posts').select().like('title', '%supabase%')
+
+// Case-insensitive pattern matching
+const { data } = await supabase.from('posts').select().ilike('title', '%supabase%')
+
+// Is null
+const { data } = await supabase.from('posts').select().is('deleted_at', null)
+```
+
+### Combining Filters
+
+```typescript
+// AND (default)
+const { data } = await supabase
+  .from('posts')
+  .select()
+  .eq('status', 'published')
+  .gt('views', 100)
+
+// OR
+const { data } = await supabase
+  .from('posts')
+  .select()
+  .or('status.eq.published,status.eq.archived')
+
+// NOT
+const { data } = await supabase
+  .from('posts')
+  .select()
+  .not('status', 'eq', 'draft')
+```
+
+## Aggregation and Counting
+
+```typescript
+// Count rows
+const { count } = await supabase
+  .from('posts')
+  .select('*', { count: 'exact', head: true })
+
+// Count with filter
+const { count } = await supabase
+  .from('posts')
+  .select('*', { count: 'exact', head: true })
+  .eq('status', 'published')
+
+// Sum, avg, min, max (using database functions)
+const { data } = await supabase.rpc('get_post_stats', {
+  author_id: userId,
+})
+```
+
+## Row Level Security (RLS)
+
+### Enable RLS
+
+```sql
+-- Enable RLS on a table
+alter table posts enable row level security;
+```
+
+### Basic Policies
+
+```sql
+-- Allow users to read their own posts
+create policy "Users can view their own posts"
+  on posts for select
+  using (auth.uid() = author_id);
+
+-- Allow users to insert their own posts
+create policy "Users can create posts"
+  on posts for insert
+  with check (auth.uid() = author_id);
+
+-- Allow users to update their own posts
+create policy "Users can update their own posts"
+  on posts for update
+  using (auth.uid() = author_id);
+
+-- Allow users to delete their own posts
+create policy "Users can delete their own posts"
+  on posts for delete
+  using (auth.uid() = author_id);
+```
+
+### Advanced Policies
+
+```sql
+-- Public read, authenticated write
+create policy "Public posts are viewable by everyone"
+  on posts for select
+  using (true);
+
+create policy "Authenticated users can create posts"
+  on posts for insert
+  with check (auth.role() = 'authenticated');
+
+-- Admins can do anything
+create policy "Admins have full access"
+  on posts for all
+  using (
+    exists (
+      select 1 from profiles
+      where id = auth.uid()
+      and role = 'admin'
+    )
+  );
+
+-- Collaborative editing
+create policy "Collaborators can edit posts"
+  on posts for update
+  using (
+    auth.uid() = author_id
+    or exists (
+      select 1 from post_collaborators
+      where post_id = posts.id
+      and user_id = auth.uid()
+    )
+  );
+```
+
+## Database Functions
+
+### Create Function
+
+```sql
+-- Increment views counter
+create or replace function increment_views(post_id bigint)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  update posts
+  set views = views + 1
+  where id = post_id;
+end;
+$$;
+```
+
+### Call Function from Client
+
+```typescript
+// Call function
+const { data, error } = await supabase.rpc('increment_views', {
+  post_id: 123,
+})
+
+// Function that returns data
+const { data, error } = await supabase.rpc('get_popular_posts', {
+  min_views: 1000,
+})
+```
+
+## Triggers
+
+### Auto-Update Timestamp
+
+```sql
+-- Create trigger function
+create or replace function update_updated_at_column()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+-- Create trigger
+create trigger update_posts_updated_at
+  before update on posts
+  for each row
+  execute function update_updated_at_column();
+```
+
+### Auto-Create Related Records
+
+```sql
+-- Auto-create profile on user signup
+create or replace function handle_new_user()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  insert into public.profiles (id, username, avatar_url)
+  values (
+    new.id,
+    new.raw_user_meta_data->>'username',
+    new.raw_user_meta_data->>'avatar_url'
+  );
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row
+  execute function handle_new_user();
+```
+
+## Full-Text Search
+
+### Set Up Full-Text Search
+
+```sql
+-- Add tsvector column
+alter table posts
+  add column fts tsvector
+  generated always as (
+    to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, ''))
+  ) stored;
+
+-- Create index
+create index posts_fts_idx on posts using gin(fts);
+```
+
+### Search from Client
+
+```typescript
+// Full-text search
+const { data } = await supabase
+  .from('posts')
+  .select('*')
+  .textSearch('fts', 'supabase & postgres', {
+    type: 'websearch',
+    config: 'english',
+  })
+```
+
+## Transactions
+
+```typescript
+// Use a database function for transactions
+const { data, error } = await supabase.rpc('transfer_funds', {
+  from_account: 123,
+  to_account: 456,
+  amount: 100,
+})
+
+// SQL function for transaction
+/*
+create or replace function transfer_funds(
+  from_account bigint,
+  to_account bigint,
+  amount numeric
+)
+returns void
+language plpgsql
+as $$
+begin
+  -- Deduct from sender
+  update accounts
+  set balance = balance - amount
+  where id = from_account;
+  
+  -- Add to receiver
+  update accounts
+  set balance = balance + amount
+  where id = to_account;
+  
+  -- Insert transaction record
+  insert into transactions (from_account, to_account, amount)
+  values (from_account, to_account, amount);
+end;
+$$;
+*/
+```
+
+## Pagination
+
+```typescript
+// Offset pagination
+const pageSize = 10
+const page = 2
+
+const { data, error } = await supabase
+  .from('posts')
+  .select('*')
+  .range((page - 1) * pageSize, page * pageSize - 1)
+
+// Cursor-based pagination
+const { data, error } = await supabase
+  .from('posts')
+  .select('*')
+  .gt('created_at', lastPostTimestamp)
+  .order('created_at', { ascending: false })
+  .limit(10)
+```
+
+## Real-time Subscriptions
+
+```typescript
+// Subscribe to all changes
+const channel = supabase
+  .channel('posts')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'posts' },
+    (payload) => {
+      console.log('Change received!', payload)
+    }
+  )
+  .subscribe()
+
+// Subscribe to specific events
+const channel = supabase
+  .channel('posts')
+  .on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'posts' },
+    (payload) => {
+      console.log('New post:', payload.new)
+    }
+  )
+  .on(
+    'postgres_changes',
+    { event: 'UPDATE', schema: 'public', table: 'posts' },
+    (payload) => {
+      console.log('Updated post:', payload.new)
+    }
+  )
+  .on(
+    'postgres_changes',
+    { event: 'DELETE', schema: 'public', table: 'posts' },
+    (payload) => {
+      console.log('Deleted post:', payload.old)
+    }
+  )
+  .subscribe()
+
+// Unsubscribe
+supabase.removeChannel(channel)
+```
+
+## Example Apps
+
+<CardGroup cols={2}>
+  <Card title="Todo App" icon="list-check" href="https://github.com/supabase/supabase/tree/master/examples/todo-list/nextjs-todo-list">
+    Complete CRUD operations with RLS
+  </Card>
+  <Card title="Employee Database" icon="users" href="https://github.com/supabase/supabase/tree/master/examples/database/employees">
+    Advanced queries and relations
+  </Card>
+  <Card title="Blog Example" icon="newspaper" href="https://github.com/supabase/supabase/tree/master/examples">
+    Full-text search and pagination
+  </Card>
+  <Card title="Next.js Slack Clone" icon="messages" href="https://github.com/supabase/supabase/tree/master/examples/slack-clone">
+    Real-time subscriptions
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Docs" icon="book" href="/database/overview">
+    Learn more about Postgres
+  </Card>
+  <Card title="Todo Tutorial" icon="graduation-cap" href="/guides/building-a-todo-app">
+    Build your first app
+  </Card>
+  <Card title="Row Level Security" icon="lock" href="/auth/row-level-security">
+    Secure your data
+  </Card>
+  <Card title="Realtime Examples" icon="bolt" href="/examples/storage">
+    Explore real-time patterns
+  </Card>
+</CardGroup>

@@ -1,0 +1,527 @@
+---
+title: 'GraphQL Mutations'
+description: 'Modify data using GraphQL mutations'
+icon: 'pen-to-square'
+---
+
+## Overview
+
+GraphQL mutations allow you to create, update, and delete data in your Supabase database. All mutations respect Row Level Security policies.
+
+<Warning>
+  GraphQL mutations are currently in beta. The API is functional but may receive updates.
+</Warning>
+
+## Insert Data
+
+### Insert Single Row
+
+Insert a single row into a table:
+
+```graphql
+mutation {
+  insertIntoCountriesCollection(
+    objects: [{
+      name: "Denmark",
+      code: "DK",
+      capital: "Copenhagen"
+    }]
+  ) {
+    records {
+      id
+      name
+      code
+      capital
+    }
+  }
+}
+```
+
+#### Response
+
+```json
+{
+  "data": {
+    "insertIntoCountriesCollection": {
+      "records": [
+        {
+          "id": 42,
+          "name": "Denmark",
+          "code": "DK",
+          "capital": "Copenhagen"
+        }
+      ]
+    }
+  }
+}
+```
+
+<ResponseField name="records" type="array">
+  Array of inserted records.
+</ResponseField>
+
+### Insert Multiple Rows
+
+Insert multiple rows at once:
+
+```graphql
+mutation {
+  insertIntoCountriesCollection(
+    objects: [
+      { name: "Denmark", code: "DK", capital: "Copenhagen" },
+      { name: "Norway", code: "NO", capital: "Oslo" },
+      { name: "Sweden", code: "SE", capital: "Stockholm" }
+    ]
+  ) {
+    records {
+      id
+      name
+      code
+    }
+    affectedCount
+  }
+}
+```
+
+<ResponseField name="affectedCount" type="integer">
+  Number of rows inserted.
+</ResponseField>
+
+### Insert with Variables
+
+Use variables for dynamic inserts:
+
+```graphql
+mutation InsertCountry(
+  $name: String!,
+  $code: String!,
+  $capital: String
+) {
+  insertIntoCountriesCollection(
+    objects: [{
+      name: $name,
+      code: $code,
+      capital: $capital
+    }]
+  ) {
+    records {
+      id
+      name
+    }
+  }
+}
+```
+
+Variables:
+```json
+{
+  "name": "Finland",
+  "code": "FI",
+  "capital": "Helsinki"
+}
+```
+
+## Update Data
+
+### Update Rows
+
+Update rows matching a filter:
+
+```graphql
+mutation {
+  updateCountriesCollection(
+    filter: { code: { eq: "US" } },
+    set: { name: "United States of America" }
+  ) {
+    records {
+      id
+      name
+      code
+    }
+    affectedCount
+  }
+}
+```
+
+<ParamField path="filter" type="object" required>
+  Filter to select rows to update.
+</ParamField>
+
+<ParamField path="set" type="object" required>
+  Fields to update with new values.
+</ParamField>
+
+### Update Multiple Fields
+
+```graphql
+mutation {
+  updateCountriesCollection(
+    filter: { id: { eq: 1 } },
+    set: {
+      name: "United States of America",
+      capital: "Washington, D.C.",
+      population: 331000000
+    }
+  ) {
+    records {
+      id
+      name
+      capital
+      population
+    }
+  }
+}
+```
+
+### Update with Variables
+
+```graphql
+mutation UpdateCountry(
+  $id: BigInt!,
+  $name: String!
+) {
+  updateCountriesCollection(
+    filter: { id: { eq: $id } },
+    set: { name: $name }
+  ) {
+    records {
+      id
+      name
+    }
+  }
+}
+```
+
+Variables:
+```json
+{
+  "id": 1,
+  "name": "USA"
+}
+```
+
+### Update Multiple Rows
+
+```graphql
+mutation {
+  updateCountriesCollection(
+    filter: { population: { lt: 1000000 } },
+    set: { category: "small" }
+  ) {
+    affectedCount
+  }
+}
+```
+
+## Delete Data
+
+### Delete Rows
+
+Delete rows matching a filter:
+
+```graphql
+mutation {
+  deleteFromCountriesCollection(
+    filter: { id: { eq: 1 } }
+  ) {
+    records {
+      id
+      name
+    }
+    affectedCount
+  }
+}
+```
+
+<ParamField path="filter" type="object" required>
+  Filter to select rows to delete.
+</ParamField>
+
+<Warning>
+  Always include a filter when deleting to avoid removing all rows.
+</Warning>
+
+### Delete with Variables
+
+```graphql
+mutation DeleteCountry($id: BigInt!) {
+  deleteFromCountriesCollection(
+    filter: { id: { eq: $id } }
+  ) {
+    records {
+      id
+      name
+    }
+  }
+}
+```
+
+Variables:
+```json
+{
+  "id": 1
+}
+```
+
+### Delete Multiple Rows
+
+```graphql
+mutation {
+  deleteFromCountriesCollection(
+    filter: {
+      code: { in: ["XX", "YY", "ZZ"] }
+    }
+  ) {
+    affectedCount
+  }
+}
+```
+
+## Upsert Data
+
+Insert or update based on conflict:
+
+```graphql
+mutation {
+  insertIntoCountriesCollection(
+    objects: [{
+      id: 1,
+      name: "United States of America",
+      code: "US"
+    }],
+    onConflict: {
+      constraint: "countries_pkey",
+      update: ["name"]
+    }
+  ) {
+    records {
+      id
+      name
+      code
+    }
+  }
+}
+```
+
+<ParamField path="onConflict" type="object">
+  Conflict resolution strategy.
+  
+  <Expandable title="onConflict properties">
+    <ParamField path="constraint" type="string" required>
+      The constraint name to check for conflicts.
+    </ParamField>
+    
+    <ParamField path="update" type="array">
+      List of columns to update on conflict.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Batching Mutations
+
+Execute multiple mutations in a single request:
+
+```graphql
+mutation BatchOperations {
+  insertCountry: insertIntoCountriesCollection(
+    objects: [{ name: "Denmark", code: "DK" }]
+  ) {
+    affectedCount
+  }
+  
+  updateCountry: updateCountriesCollection(
+    filter: { code: { eq: "US" } },
+    set: { name: "USA" }
+  ) {
+    affectedCount
+  }
+  
+  deleteCountry: deleteFromCountriesCollection(
+    filter: { code: { eq: "XX" } }
+  ) {
+    affectedCount
+  }
+}
+```
+
+## Relationships
+
+### Insert with Related Data
+
+Insert a country with cities:
+
+```graphql
+mutation {
+  insertIntoCountriesCollection(
+    objects: [{
+      name: "Denmark",
+      code: "DK",
+      cities: {
+        create: [
+          { name: "Copenhagen", population: 794128 },
+          { name: "Aarhus", population: 285273 }
+        ]
+      }
+    }]
+  ) {
+    records {
+      id
+      name
+      citiesCollection {
+        edges {
+          node {
+            name
+            population
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Error Handling
+
+### Validation Errors
+
+Handle validation errors in the response:
+
+```json
+{
+  "errors": [
+    {
+      "message": "null value in column \"name\" violates not-null constraint",
+      "locations": [{ "line": 2, "column": 3 }],
+      "path": ["insertIntoCountriesCollection"]
+    }
+  ]
+}
+```
+
+### Constraint Violations
+
+```json
+{
+  "errors": [
+    {
+      "message": "duplicate key value violates unique constraint \"countries_code_key\"",
+      "locations": [{ "line": 2, "column": 3 }],
+      "path": ["insertIntoCountriesCollection"]
+    }
+  ]
+}
+```
+
+## Transactions
+
+All mutations in a single GraphQL request are executed in a transaction:
+
+```graphql
+mutation TransferBalance(
+  $senderId: UUID!,
+  $receiverId: UUID!,
+  $amount: Numeric!
+) {
+  debit: updateAccountsCollection(
+    filter: { id: { eq: $senderId } },
+    set: { balance: { decrement: $amount } }
+  ) {
+    affectedCount
+  }
+  
+  credit: updateAccountsCollection(
+    filter: { id: { eq: $receiverId } },
+    set: { balance: { increment: $amount } }
+  ) {
+    affectedCount
+  }
+}
+```
+
+<Info>
+  If any mutation in the request fails, all mutations are rolled back.
+</Info>
+
+## Optimistic Updates
+
+Return updated data immediately:
+
+```graphql
+mutation UpdateCountryPopulation(
+  $id: BigInt!,
+  $population: BigInt!
+) {
+  updateCountriesCollection(
+    filter: { id: { eq: $id } },
+    set: { population: $population }
+  ) {
+    records {
+      id
+      name
+      population
+      updatedAt
+    }
+  }
+}
+```
+
+## Row Level Security
+
+Mutations respect RLS policies:
+
+```sql
+-- Users can only update their own data
+CREATE POLICY "Users can update own data"
+  ON countries
+  FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always use filters for updates/deletes">
+    Prevent accidental bulk operations by always including specific filters:
+    
+    ```graphql
+    filter: { id: { eq: $id } }
+    ```
+  </Accordion>
+  
+  <Accordion title="Use variables for dynamic values">
+    Never interpolate values into mutation strings - use variables:
+    
+    ```graphql
+    mutation UpdateUser($id: UUID!, $name: String!) { ... }
+    ```
+  </Accordion>
+  
+  <Accordion title="Request updated data">
+    Always request the updated fields to confirm changes:
+    
+    ```graphql
+    records { id name updatedAt }
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle errors gracefully">
+    Check for errors in the response and handle them appropriately.
+  </Accordion>
+  
+  <Accordion title="Use transactions for related mutations">
+    Group related mutations in a single request to ensure atomicity.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Queries" icon="search" href="/api/graphql/queries">
+    Learn about querying data
+  </Card>
+  
+  <Card title="Client Libraries" icon="code" href="/api/javascript">
+    Use GraphQL with client SDKs
+  </Card>
+</CardGroup>

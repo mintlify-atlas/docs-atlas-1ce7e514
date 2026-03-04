@@ -1,0 +1,614 @@
+---
+title: 'Network Security'
+description: 'Secure your database with IP restrictions and SSL enforcement'
+---
+
+Supabase provides robust network security features to control who can connect to your database and how connections are secured. Configure IP restrictions to whitelist trusted networks and enforce SSL to ensure all connections are encrypted.
+
+## Network Security Overview
+
+Protect your database with multiple layers of network security:
+
+<CardGroup cols={2}>
+  <Card title="IP Restrictions" icon="shield">
+    Whitelist specific IP addresses or CIDR ranges
+  </Card>
+  
+  <Card title="SSL Enforcement" icon="lock">
+    Require encrypted connections to PostgreSQL
+  </Card>
+  
+  <Card title="API Protection" icon="key">
+    JWT-based authentication for all HTTP APIs
+  </Card>
+  
+  <Card title="DDoS Protection" icon="shield-halved">
+    Built-in protection against abuse
+  </Card>
+</CardGroup>
+
+## IP Restrictions (Network Restrictions)
+
+Network restrictions allow you to specify which IP addresses can connect to your PostgreSQL database and connection pooler.
+
+### How It Works
+
+Restrictions are enforced **before** traffic reaches your database:
+
+1. Connection attempt from IP address
+2. IP checked against allowed list
+3. If not allowed: **Connection blocked**
+4. If allowed: **Authentication required** (must still have valid credentials)
+
+<Info>
+Network restrictions apply to direct database connections and pooler connections, not HTTP APIs (PostgREST, Storage, Auth).
+</Info>
+
+### Enable via Dashboard
+
+<Steps>
+  <Step title="Navigate to settings">
+    Go to **Database** → **Settings** in your [project dashboard](https://supabase.com/dashboard)
+  </Step>
+  
+  <Step title="Find Network Restrictions">
+    Scroll to the **Network Restrictions** section at the bottom
+    
+    <Note>
+    If you don't see this section, update your PostgreSQL version in **Settings** → **Infrastructure**.
+    </Note>
+  </Step>
+  
+  <Step title="Add allowed CIDRs">
+    Click **Add restriction** and enter:
+    
+    - **IPv4 CIDR**: e.g., `192.168.1.0/24`
+    - **IPv6 CIDR**: e.g., `2001:db8::/32`
+    
+    Common examples:
+    - Single IP: `203.0.113.5/32`
+    - Subnet: `203.0.113.0/24` (256 addresses)
+    - All IPv4: `0.0.0.0/0` (no restrictions)
+    - All IPv6: `::/0` (no restrictions)
+  </Step>
+  
+  <Step title="Save changes">
+    Click **Apply** to activate restrictions
+  </Step>
+</Steps>
+
+### Enable via CLI
+
+```bash
+# Install Supabase CLI 1.22.0+
+supabase --version
+
+# Login
+supabase login
+
+# Check current restrictions
+supabase network-restrictions \
+  --project-ref <your-ref> \
+  get --experimental
+
+# Add restrictions
+supabase network-restrictions \
+  --project-ref <your-ref> \
+  update \
+  --db-allow-cidr 203.0.113.5/32 \
+  --db-allow-cidr 2001:db8::/64 \
+  --experimental
+```
+
+### Enable via Management API
+
+```bash
+export SUPABASE_ACCESS_TOKEN="your-token"
+export PROJECT_REF="your-project-ref"
+
+# Get current restrictions
+curl -X GET \
+  "https://api.supabase.com/v1/projects/$PROJECT_REF/network-restrictions" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+
+# Update restrictions  
+curl -X POST \
+  "https://api.supabase.com/v1/projects/$PROJECT_REF/network-restrictions/apply" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "db_allowed_cidrs": [
+      "203.0.113.0/24",
+      "2001:db8::/64"
+    ]
+  }'
+```
+
+### IPv4 and IPv6 Considerations
+
+<Warning>
+If your database resolves to an IPv6 address, you must add **both** IPv4 and IPv6 CIDRs to the allow list.
+</Warning>
+
+Check your database IP version:
+
+```bash
+nslookup db.your-project.supabase.co
+```
+
+If you see both IPv4 and IPv6 addresses, add both:
+
+```bash
+supabase network-restrictions \
+  --project-ref <ref> \
+  update \
+  --db-allow-cidr 203.0.113.0/24 \      # IPv4
+  --db-allow-cidr 2001:db8::/64 \       # IPv6
+  --experimental
+```
+
+**Exceptions** (only IPv4 needed):
+- You have the IPv4 add-on enabled
+- You have an IPv6 migration extension
+
+### Common CIDR Examples
+
+| Use Case | IPv4 CIDR | IPv6 CIDR |
+|----------|-----------|----------|
+| Single IP | `203.0.113.5/32` | `2001:db8::1/128` |
+| Small office | `203.0.113.0/24` | `2001:db8::/64` |
+| Corporate network | `10.0.0.0/16` | `fd00::/16` |
+| Cloud provider region | `52.0.0.0/8` | `2600::/16` |
+| Allow all (remove restrictions) | `0.0.0.0/0` | `::/0` |
+
+### Find Your IP Address
+
+To whitelist your current IP:
+
+```bash
+# Your public IPv4
+curl -4 https://api.ipify.org
+
+# Your public IPv6  
+curl -6 https://api6.ipify.org
+```
+
+Then add as `/32` (IPv4) or `/128` (IPv6):
+
+```bash
+supabase network-restrictions \
+  --project-ref <ref> \
+  update \
+  --db-allow-cidr $(curl -4 https://api.ipify.org)/32 \
+  --experimental
+```
+
+### Remove Restrictions
+
+Allow connections from any IP:
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    supabase network-restrictions \
+      --project-ref <ref> \
+      update \
+      --db-allow-cidr 0.0.0.0/0 \
+      --db-allow-cidr ::/0 \
+      --experimental
+    ```
+  </Tab>
+  
+  <Tab title="Dashboard">
+    1. Go to **Database** → **Settings**
+    2. Scroll to **Network Restrictions**
+    3. Click **Remove all restrictions**
+    4. Confirm
+  </Tab>
+</Tabs>
+
+## SSL Enforcement
+
+Enforce encrypted connections to your PostgreSQL database.
+
+### Why Enable SSL Enforcement
+
+By default, Supabase allows both SSL and non-SSL connections for compatibility. Enforce SSL to:
+
+- **Prevent eavesdropping**: Protect credentials and data in transit
+- **Prevent tampering**: Ensure data integrity
+- **Meet compliance**: Required for SOC 2, HIPAA, etc.
+- **Defense in depth**: Additional security layer
+
+<Info>
+HTTP APIs (PostgREST, Storage, Auth) **always** enforce SSL. This setting only applies to PostgreSQL connections.
+</Info>
+
+### Enable via Dashboard
+
+<Steps>
+  <Step title="Navigate to settings">
+    Go to **Database** → **Settings**
+  </Step>
+  
+  <Step title="Find SSL Configuration">
+    Scroll to **SSL Configuration** section
+  </Step>
+  
+  <Step title="Enable enforcement">
+    Toggle **Enforce SSL on incoming connections**
+  </Step>
+  
+  <Step title="Confirm reboot">
+    Click **Confirm** (triggers brief database restart)
+  </Step>
+</Steps>
+
+<Warning>
+Enabling SSL enforcement triggers a database reboot:
+- Small projects: Few seconds
+- Large projects: A few minutes
+- Plan maintenance window accordingly
+</Warning>
+
+### Enable via CLI
+
+```bash
+# Install CLI 1.37.0+
+supabase --version
+
+# Check current status
+supabase ssl-enforcement \
+  --project-ref <ref> \
+  get --experimental
+
+# Enable SSL enforcement
+supabase ssl-enforcement \
+  --project-ref <ref> \
+  update --enable-db-ssl-enforcement \
+  --experimental
+
+# Disable SSL enforcement
+supabase ssl-enforcement \
+  --project-ref <ref> \
+  update --disable-db-ssl-enforcement \
+  --experimental
+```
+
+### Enable via Management API
+
+```bash
+export SUPABASE_ACCESS_TOKEN="your-token"
+export PROJECT_REF="your-project-ref"
+
+# Check status
+curl -X GET \
+  "https://api.supabase.com/v1/projects/$PROJECT_REF/ssl-enforcement" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+
+# Enable
+curl -X PUT \
+  "https://api.supabase.com/v1/projects/$PROJECT_REF/ssl-enforcement" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requestedConfig": {
+      "database": true
+    }
+  }'
+```
+
+### PostgreSQL SSL Modes
+
+PostgreSQL clients support different SSL modes:
+
+| Mode | Eavesdropping Protection | MITM Protection | Notes |
+|------|-------------------------|-----------------|-------|
+| `disable` | No | No | **Never use in production** |
+| `allow` | Maybe | No | Falls back to unencrypted |
+| `prefer` | Maybe | No | **Default**, tries SSL first |
+| `require` | Yes | No | Requires SSL, doesn't verify cert |
+| `verify-ca` | Yes | Depends | Verifies certificate authority |
+| `verify-full` | Yes | Yes | **Recommended for production** |
+
+### Using verify-full Mode
+
+For maximum security, use `verify-full`:
+
+<Steps>
+  <Step title="Download CA certificate">
+    1. Go to **Database** → **Settings**
+    2. Scroll to **SSL Configuration**  
+    3. Download **prod-ca-2021.crt**
+  </Step>
+  
+  <Step title="Add to trusted CAs">
+    ```bash
+    # Linux/macOS
+    cat prod-ca-2021.crt >> ~/.postgresql/root.crt
+    
+    # Windows
+    # Place in: %APPDATA%\postgresql\root.crt
+    ```
+  </Step>
+  
+  <Step title="Connect with verify-full">
+    ```bash
+    psql "postgresql://postgres:[password]@db.your-project.supabase.co:6543/postgres?sslmode=verify-full"
+    ```
+  </Step>
+</Steps>
+
+**With connection libraries**:
+
+<Tabs>
+  <Tab title="Node.js (pg)">
+    ```javascript
+    const { Pool } = require('pg')
+    const fs = require('fs')
+    
+    const pool = new Pool({
+      host: 'db.your-project.supabase.co',
+      port: 6543,
+      database: 'postgres',
+      user: 'postgres',
+      password: 'your-password',
+      ssl: {
+        rejectUnauthorized: true,
+        ca: fs.readFileSync('./prod-ca-2021.crt').toString(),
+      },
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Python (psycopg2)">
+    ```python
+    import psycopg2
+    
+    conn = psycopg2.connect(
+        host="db.your-project.supabase.co",
+        port=6543,
+        database="postgres",
+        user="postgres",
+        password="your-password",
+        sslmode="verify-full",
+        sslrootcert="./prod-ca-2021.crt"
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Go">
+    ```go
+    import (
+        "database/sql"
+        _ "github.com/lib/pq"
+    )
+    
+    connStr := "host=db.your-project.supabase.co " +
+               "port=6543 " +
+               "user=postgres " +
+               "password=your-password " +
+               "dbname=postgres " +
+               "sslmode=verify-full " +
+               "sslrootcert=./prod-ca-2021.crt"
+    
+    db, err := sql.Open("postgres", connStr)
+    ```
+  </Tab>
+</Tabs>
+
+## Limitations
+
+### Network Restrictions
+
+<Warning>
+Network restrictions currently **only apply to**:
+- Direct PostgreSQL connections
+- Connection pooler (Supavisor)
+
+**They do NOT apply to**:
+- PostgREST (REST API)
+- Storage API
+- Auth API  
+- Realtime
+- Supabase client libraries
+</Warning>
+
+**Workarounds for HTTP APIs**:
+- Use Row Level Security (RLS) policies
+- Implement application-level IP filtering
+- Use a CDN with IP restrictions (Cloudflare, etc.)
+- Deploy behind a VPN or private network
+
+### Edge Functions and Network Restrictions
+
+<Caution>
+If network restrictions are enabled, **Edge Functions cannot connect directly** to your database.
+
+**Solution**: Use Supabase client libraries in Edge Functions:
+
+```typescript
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+Deno.serve(async (req) => {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!
+  )
+  
+  // Use client, not direct postgres connection
+  const { data } = await supabase.from('users').select('*')
+  
+  return new Response(JSON.stringify(data))
+})
+```
+</Caution>
+
+## Security Best Practices
+
+<Steps>
+  <Step title="Start restrictive">
+    Begin with specific IPs, expand only as needed:
+    
+    ```bash
+    # Start: Only office IP
+    --db-allow-cidr 203.0.113.5/32
+    
+    # Expand: Add cloud provider
+    --db-allow-cidr 52.0.0.0/16
+    
+    # Avoid: Allowing everything
+    --db-allow-cidr 0.0.0.0/0  # Defeats the purpose!
+    ```
+  </Step>
+  
+  <Step title="Enable SSL enforcement">
+    Always enforce SSL in production
+  </Step>
+  
+  <Step title="Use verify-full for critical apps">
+    Maximum security with certificate verification
+  </Step>
+  
+  <Step title="Combine with RLS">
+    Network restrictions + RLS = defense in depth
+  </Step>
+  
+  <Step title="Document your CIDRs">
+    Keep a record of what each CIDR represents:
+    
+    ```bash
+    # Office network: 203.0.113.0/24
+    # AWS us-east-1: 52.0.0.0/16  
+    # CI/CD runner: 198.51.100.5/32
+    ```
+  </Step>
+  
+  <Step title="Review regularly">
+    Audit and remove unused IP ranges quarterly
+  </Step>
+</Steps>
+
+## Common Scenarios
+
+### Scenario 1: Development Team
+
+```bash
+# Office static IP
+--db-allow-cidr 203.0.113.0/24
+
+# VPN endpoint
+--db-allow-cidr 198.51.100.1/32
+
+# CI/CD runner
+--db-allow-cidr 192.0.2.50/32
+```
+
+### Scenario 2: Cloud Application
+
+```bash
+# Vercel serverless IPs (example)
+--db-allow-cidr 76.76.21.0/24
+
+# AWS Lambda (NAT Gateway)
+--db-allow-cidr 52.1.2.3/32
+
+# GitHub Actions runner
+--db-allow-cidr 140.82.112.0/20
+```
+
+### Scenario 3: Multi-Region App
+
+```bash
+# US region
+--db-allow-cidr 52.0.0.0/16
+
+# EU region  
+--db-allow-cidr 18.0.0.0/16
+
+# APAC region
+--db-allow-cidr 13.0.0.0/16
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection refused after enabling restrictions">
+    **Error**: `connection refused` or `timeout`
+    
+    **Solution**:
+    - Verify your IP is in allow list
+    - Check you added correct IP: `curl https://api.ipify.org`
+    - Add both IPv4 and IPv6 if database uses IPv6
+    - Ensure CIDR notation is correct (`/32` for single IP)
+  </Accordion>
+  
+  <Accordion title="SSL connection failed">
+    **Error**: `SSL connection has been closed unexpectedly`
+    
+    **Solution**:
+    - Update client to support SSL
+    - Use `sslmode=require` or higher
+    - Download and install CA certificate for `verify-full`
+    - Check firewall allows SSL connections
+  </Accordion>
+  
+  <Accordion title="Can't connect from Edge Function">
+    **Error**: Edge Function times out connecting to database
+    
+    **Solution**:
+    - Use Supabase client library (not direct postgres connection)
+    - Or: Disable network restrictions
+    - Or: Use PostgREST API from Edge Function
+  </Accordion>
+  
+  <Accordion title="IPv6 connection blocked">
+    **Error**: Connection works sometimes, fails other times
+    
+    **Cause**: Database has IPv6, only IPv4 CIDR added
+    
+    **Solution**:
+    ```bash
+    # Add both IPv4 and IPv6
+    supabase network-restrictions update \
+      --db-allow-cidr 203.0.113.0/24 \  # IPv4
+      --db-allow-cidr 2001:db8::/64     # IPv6
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Network Security Checklist
+
+Before going to production:
+
+<Checklist>
+  - [ ] Network restrictions configured (if needed)
+  - [ ] Both IPv4 and IPv6 CIDRs added (if using IPv6)
+  - [ ] SSL enforcement enabled
+  - [ ] CA certificate downloaded
+  - [ ] Clients use `sslmode=verify-full`
+  - [ ] Edge Functions use client libraries
+  - [ ] Documented all allowed CIDRs
+  - [ ] Tested connections from all sources
+  - [ ] RLS policies also enabled
+</Checklist>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Row Level Security" icon="shield" href="./row-level-security">
+    Implement database-level access control
+  </Card>
+  
+  <Card title="Encryption" icon="lock" href="./encryption">
+    Understand data encryption in Supabase
+  </Card>
+  
+  <Card title="Production Checklist" icon="clipboard-check" href="/platform/production-checklist">
+    Complete pre-launch security review
+  </Card>
+  
+  <Card title="Auth Security" icon="key" href="/authentication/overview">
+    Secure your authentication flows
+  </Card>
+</CardGroup>

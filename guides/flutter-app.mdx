@@ -1,0 +1,671 @@
+---
+title: 'Flutter Integration Guide'
+description: 'Build cross-platform mobile apps with Flutter and Supabase'
+icon: 'mobile'
+---
+
+Learn how to integrate Supabase with Flutter to build beautiful, cross-platform mobile applications for iOS and Android with authentication, real-time data, and file storage.
+
+## Why Flutter + Supabase?
+
+- **Cross-platform** - Build for iOS and Android from a single codebase
+- **Native performance** with Flutter's engine
+- **Real-time** subscriptions for live updates
+- **Type-safe** Dart integration
+- **Offline support** with local caching
+- **Deep links** for OAuth and magic links
+
+## Quick Start
+
+<Steps>
+
+<Step title="Create a Flutter App">
+
+```bash
+flutter create my_app
+cd my_app
+```
+
+</Step>
+
+<Step title="Install Supabase">
+
+Add to `pubspec.yaml`:
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  supabase_flutter: ^2.0.0
+```
+
+Install dependencies:
+
+```bash
+flutter pub get
+```
+
+</Step>
+
+<Step title="Configure Deep Links">
+
+For iOS, update `ios/Runner/Info.plist`:
+
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleTypeRole</key>
+    <string>Editor</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>io.supabase.myapp</string>
+    </array>
+  </dict>
+</array>
+```
+
+For Android, update `android/app/src/main/AndroidManifest.xml`:
+
+```xml
+<manifest ...>
+  <application ...>
+    <activity ...>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="io.supabase.myapp" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>
+```
+
+</Step>
+
+<Step title="Initialize Supabase">
+
+Update `lib/main.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: 'your-project-url',
+    anonKey: 'your-anon-key',
+  );
+
+  runApp(const MyApp());
+}
+
+final supabase = Supabase.instance.client;
+
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Supabase Flutter',
+      theme: ThemeData.dark().copyWith(
+        primaryColor: Colors.green,
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            foregroundColor: Colors.white,
+            backgroundColor: Colors.green,
+          ),
+        ),
+      ),
+      home: const SplashPage(),
+    );
+  }
+}
+```
+
+</Step>
+
+</Steps>
+
+## Authentication
+
+### Splash Screen
+
+Create a splash screen to check auth status:
+
+```dart
+class SplashPage extends StatefulWidget {
+  const SplashPage({Key? key}) : super(key: key);
+
+  @override
+  State<SplashPage> createState() => _SplashPageState();
+}
+
+class _SplashPageState extends State<SplashPage> {
+  @override
+  void initState() {
+    super.initState();
+    _redirect();
+  }
+
+  Future<void> _redirect() async {
+    await Future.delayed(Duration.zero);
+    
+    final session = supabase.auth.currentSession;
+    if (session != null) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const HomePage()),
+      );
+    } else {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+}
+```
+
+### Login Page
+
+```dart
+class LoginPage extends StatefulWidget {
+  const LoginPage({Key? key}) : super(key: key);
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _signIn() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await supabase.auth.signInWithPassword(
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+      
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      }
+    } on AuthException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unexpected error occurred')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signUp() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await supabase.auth.signUp(
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Check your email for confirmation')),
+        );
+      }
+    } on AuthException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Sign In')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(
+            controller: _emailController,
+            decoration: const InputDecoration(labelText: 'Email'),
+            keyboardType: TextInputType.emailAddress,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _passwordController,
+            decoration: const InputDecoration(labelText: 'Password'),
+            obscureText: true,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _isLoading ? null : _signIn,
+            child: Text(_isLoading ? 'Loading...' : 'Sign In'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _isLoading ? null : _signUp,
+            child: const Text('Sign Up'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+}
+```
+
+## Database Operations
+
+### Fetching Data
+
+```dart
+class PostsPage extends StatefulWidget {
+  const PostsPage({Key? key}) : super(key: key);
+
+  @override
+  State<PostsPage> createState() => _PostsPageState();
+}
+
+class _PostsPageState extends State<PostsPage> {
+  List<Map<String, dynamic>> _posts = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPosts();
+  }
+
+  Future<void> _fetchPosts() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await supabase
+          .from('posts')
+          .select()
+          .order('created_at', ascending: false);
+      
+      setState(() {
+        _posts = List<Map<String, dynamic>>.from(response);
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading posts: $error')),
+        );
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Posts')),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              itemCount: _posts.length,
+              itemBuilder: (context, index) {
+                final post = _posts[index];
+                return Card(
+                  margin: const EdgeInsets.all(8),
+                  child: ListTile(
+                    title: Text(post['title'] ?? ''),
+                    subtitle: Text(post['content'] ?? ''),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const CreatePostPage()),
+        ).then((_) => _fetchPosts()),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+```
+
+### Inserting Data
+
+```dart
+class CreatePostPage extends StatefulWidget {
+  const CreatePostPage({Key? key}) : super(key: key);
+
+  @override
+  State<CreatePostPage> createState() => _CreatePostPageState();
+}
+
+class _CreatePostPageState extends State<CreatePostPage> {
+  final _titleController = TextEditingController();
+  final _contentController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _createPost() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await supabase.from('posts').insert({
+        'title': _titleController.text,
+        'content': _contentController.text,
+        'user_id': supabase.auth.currentUser!.id,
+      });
+
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error creating post: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Create Post')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(
+            controller: _titleController,
+            decoration: const InputDecoration(labelText: 'Title'),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _contentController,
+            decoration: const InputDecoration(labelText: 'Content'),
+            maxLines: 5,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _isLoading ? null : _createPost,
+            child: Text(_isLoading ? 'Creating...' : 'Create Post'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _contentController.dispose();
+    super.dispose();
+  }
+}
+```
+
+## Real-time Subscriptions
+
+```dart
+class RealtimePostsPage extends StatefulWidget {
+  const RealtimePostsPage({Key? key}) : super(key: key);
+
+  @override
+  State<RealtimePostsPage> createState() => _RealtimePostsPageState();
+}
+
+class _RealtimePostsPageState extends State<RealtimePostsPage> {
+  List<Map<String, dynamic>> _posts = [];
+  late final RealtimeChannel _channel;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPosts();
+    _setupRealtimeSubscription();
+  }
+
+  Future<void> _loadPosts() async {
+    final response = await supabase
+        .from('posts')
+        .select()
+        .order('created_at', ascending: false);
+    
+    setState(() {
+      _posts = List<Map<String, dynamic>>.from(response);
+    });
+  }
+
+  void _setupRealtimeSubscription() {
+    _channel = supabase
+        .channel('posts')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'posts',
+          callback: (payload) {
+            setState(() {
+              _posts.insert(0, payload.newRecord);
+            });
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.delete,
+          schema: 'public',
+          table: 'posts',
+          callback: (payload) {
+            setState(() {
+              _posts.removeWhere((post) => post['id'] == payload.oldRecord['id']);
+            });
+          },
+        )
+        .subscribe();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Real-time Posts')),
+      body: ListView.builder(
+        itemCount: _posts.length,
+        itemBuilder: (context, index) {
+          final post = _posts[index];
+          return Card(
+            margin: const EdgeInsets.all(8),
+            child: ListTile(
+              title: Text(post['title'] ?? ''),
+              subtitle: Text(post['content'] ?? ''),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    supabase.removeChannel(_channel);
+    super.dispose();
+  }
+}
+```
+
+## File Upload
+
+```dart
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+
+class AvatarUpload extends StatefulWidget {
+  const AvatarUpload({Key? key}) : super(key: key);
+
+  @override
+  State<AvatarUpload> createState() => _AvatarUploadState();
+}
+
+class _AvatarUploadState extends State<AvatarUpload> {
+  String? _avatarUrl;
+  bool _isLoading = false;
+
+  Future<void> _uploadAvatar() async {
+    final picker = ImagePicker();
+    final imageFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (imageFile == null) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final bytes = await imageFile.readAsBytes();
+      final fileExt = imageFile.path.split('.').last;
+      final fileName = '${DateTime.now().toIso8601String()}.$fileExt';
+      final filePath = '${supabase.auth.currentUser!.id}/$fileName';
+
+      await supabase.storage.from('avatars').uploadBinary(
+            filePath,
+            bytes,
+          );
+
+      final publicUrl = supabase.storage.from('avatars').getPublicUrl(filePath);
+
+      setState(() {
+        _avatarUrl = publicUrl;
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error uploading avatar: $error')),
+        );
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        if (_avatarUrl != null)
+          CircleAvatar(
+            radius: 50,
+            backgroundImage: NetworkImage(_avatarUrl!),
+          )
+        else
+          const CircleAvatar(
+            radius: 50,
+            child: Icon(Icons.person, size: 50),
+          ),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _uploadAvatar,
+          child: Text(_isLoading ? 'Uploading...' : 'Upload Avatar'),
+        ),
+      ],
+    );
+  }
+}
+```
+
+## Best Practices
+
+<Card title="Dispose Resources" icon="trash">
+  Always dispose controllers and unsubscribe from channels.
+</Card>
+
+<Card title="Error Handling" icon="exclamation-triangle">
+  Use try-catch blocks and show user-friendly error messages.
+</Card>
+
+<Card title="Loading States" icon="spinner">
+  Show loading indicators during async operations.
+</Card>
+
+<Card title="Deep Links" icon="link">
+  Configure deep links for OAuth and magic link authentication.
+</Card>
+
+<Card title="State Management" icon="box">
+  Consider using Provider, Riverpod, or Bloc for complex apps.
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="User Management" icon="users" href="/guides/user-management">
+    Build user profiles with avatars
+  </Card>
+  <Card title="File Uploads" icon="upload" href="/guides/file-uploads">
+    Handle file storage
+  </Card>
+  <Card title="Realtime Chat" icon="messages" href="/guides/realtime-chat">
+    Build a chat app
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/overview">
+    Explore Flutter examples
+  </Card>
+</CardGroup>

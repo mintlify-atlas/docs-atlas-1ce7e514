@@ -1,0 +1,624 @@
+---
+title: 'Vue Integration Guide'
+description: 'Build modern applications with Vue 3 and Supabase'
+icon: 'V'
+---
+
+Learn how to integrate Supabase with Vue 3 using the Composition API, Pinia for state management, and reactive data patterns.
+
+## Why Vue + Supabase?
+
+- **Reactive** data with Vue's reactivity system
+- **Composition API** for clean, reusable logic
+- **Type-safe** with TypeScript support
+- **Pinia** for centralized state management
+- **Zero backend** configuration
+
+## Quick Start
+
+<Steps>
+
+<Step title="Create a Vue App">
+
+Using Vite:
+
+```bash
+npm create vite@latest my-app -- --template vue-ts
+cd my-app
+npm install
+```
+
+</Step>
+
+<Step title="Install Supabase">
+
+```bash
+npm install @supabase/supabase-js
+npm install pinia
+```
+
+</Step>
+
+<Step title="Set Up Environment Variables">
+
+Create `.env`:
+
+```bash
+VITE_SUPABASE_URL=your-project-url
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+</Step>
+
+<Step title="Create Supabase Client">
+
+Create `src/lib/supabase.ts`:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+```
+
+</Step>
+
+<Step title="Set Up Pinia">
+
+Update `src/main.ts`:
+
+```typescript
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import App from './App.vue'
+
+const app = createApp(App)
+app.use(createPinia())
+app.mount('#app')
+```
+
+</Step>
+
+</Steps>
+
+## Authentication Store
+
+Create a Pinia store for authentication:
+
+```typescript
+// src/stores/auth.ts
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { supabase } from '@/lib/supabase'
+import type { User, Session } from '@supabase/supabase-js'
+
+export const useAuthStore = defineStore('auth', () => {
+  const user = ref<User | null>(null)
+  const session = ref<Session | null>(null)
+  const loading = ref(true)
+
+  const isAuthenticated = computed(() => !!user.value)
+
+  async function initialize() {
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession()
+      session.value = currentSession
+      user.value = currentSession?.user ?? null
+
+      supabase.auth.onAuthStateChange((_event, newSession) => {
+        session.value = newSession
+        user.value = newSession?.user ?? null
+      })
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function signIn(email: string, password: string) {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) throw error
+  }
+
+  async function signUp(email: string, password: string) {
+    const { error } = await supabase.auth.signUp({ email, password })
+    if (error) throw error
+  }
+
+  async function signOut() {
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
+  }
+
+  return {
+    user,
+    session,
+    loading,
+    isAuthenticated,
+    initialize,
+    signIn,
+    signUp,
+    signOut,
+  }
+})
+```
+
+## Login Component
+
+Create an authentication component:
+
+```vue
+<!-- src/components/Auth.vue -->
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
+const email = ref('')
+const password = ref('')
+const loading = ref(false)
+const error = ref<string | null>(null)
+
+const handleSignIn = async () => {
+  try {
+    loading.value = true
+    error.value = null
+    await authStore.signIn(email.value, password.value)
+  } catch (err: any) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleSignUp = async () => {
+  try {
+    loading.value = true
+    error.value = null
+    await authStore.signUp(email.value, password.value)
+    alert('Check your email for the confirmation link!')
+  } catch (err: any) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="max-w-md mx-auto mt-8 p-6 bg-white rounded-lg shadow">
+    <h1 class="text-2xl font-bold mb-6">Welcome</h1>
+    
+    <div v-if="error" class="mb-4 p-3 bg-red-100 text-red-700 rounded">
+      {{ error }}
+    </div>
+
+    <form @submit.prevent class="space-y-4">
+      <div>
+        <label for="email" class="block text-sm font-medium mb-1">Email</label>
+        <input
+          id="email"
+          v-model="email"
+          type="email"
+          class="w-full px-3 py-2 border rounded-lg"
+          required
+        />
+      </div>
+      
+      <div>
+        <label for="password" class="block text-sm font-medium mb-1">Password</label>
+        <input
+          id="password"
+          v-model="password"
+          type="password"
+          class="w-full px-3 py-2 border rounded-lg"
+          required
+        />
+      </div>
+      
+      <div class="flex gap-2">
+        <button
+          type="button"
+          @click="handleSignIn"
+          :disabled="loading"
+          class="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg disabled:opacity-50"
+        >
+          Sign In
+        </button>
+        <button
+          type="button"
+          @click="handleSignUp"
+          :disabled="loading"
+          class="flex-1 px-4 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
+        >
+          Sign Up
+        </button>
+      </div>
+    </form>
+  </div>
+</template>
+```
+
+## Database Operations
+
+### Fetching Data with Composables
+
+Create a reusable composable:
+
+```typescript
+// src/composables/useSupabase.ts
+import { ref, onMounted, onUnmounted } from 'vue'
+import { supabase } from '@/lib/supabase'
+import type { RealtimeChannel } from '@supabase/supabase-js'
+
+export function useSupabaseQuery<T>(table: string, select = '*') {
+  const data = ref<T[]>([])
+  const loading = ref(true)
+  const error = ref<Error | null>(null)
+
+  async function fetch() {
+    try {
+      loading.value = true
+      const { data: result, error: err } = await supabase
+        .from(table)
+        .select(select)
+
+      if (err) throw err
+      data.value = result || []
+    } catch (err: any) {
+      error.value = err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  onMounted(() => {
+    fetch()
+  })
+
+  return { data, loading, error, refetch: fetch }
+}
+
+export function useSupabaseRealtime<T>(table: string, select = '*') {
+  const data = ref<T[]>([])
+  const loading = ref(true)
+  const error = ref<Error | null>(null)
+  let channel: RealtimeChannel | null = null
+
+  async function fetch() {
+    try {
+      loading.value = true
+      const { data: result, error: err } = await supabase
+        .from(table)
+        .select(select)
+
+      if (err) throw err
+      data.value = result || []
+    } catch (err: any) {
+      error.value = err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  onMounted(async () => {
+    await fetch()
+
+    // Subscribe to real-time changes
+    channel = supabase
+      .channel(`${table}_changes`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table },
+        (payload) => {
+          data.value = [payload.new as T, ...data.value]
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table },
+        (payload) => {
+          data.value = data.value.filter((item: any) => item.id !== payload.old.id)
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table },
+        (payload) => {
+          data.value = data.value.map((item: any) =>
+            item.id === payload.new.id ? (payload.new as T) : item
+          )
+        }
+      )
+      .subscribe()
+  })
+
+  onUnmounted(() => {
+    if (channel) {
+      supabase.removeChannel(channel)
+    }
+  })
+
+  return { data, loading, error, refetch: fetch }
+}
+```
+
+### Using the Composable
+
+```vue
+<!-- src/components/Posts.vue -->
+<script setup lang="ts">
+import { useSupabaseRealtime } from '@/composables/useSupabase'
+
+interface Post {
+  id: string
+  title: string
+  content: string
+  created_at: string
+}
+
+const { data: posts, loading } = useSupabaseRealtime<Post>('posts')
+</script>
+
+<template>
+  <div class="space-y-4">
+    <h2 class="text-2xl font-bold">Posts</h2>
+    
+    <div v-if="loading" class="text-center py-8">
+      Loading...
+    </div>
+    
+    <div v-else-if="posts.length === 0" class="text-center py-8 text-gray-500">
+      No posts yet
+    </div>
+    
+    <div v-else class="space-y-4">
+      <div
+        v-for="post in posts"
+        :key="post.id"
+        class="p-4 border rounded-lg"
+      >
+        <h3 class="text-xl font-bold">{{ post.title }}</h3>
+        <p class="text-gray-600 mt-2">{{ post.content }}</p>
+        <p class="text-sm text-gray-400 mt-2">
+          {{ new Date(post.created_at).toLocaleDateString() }}
+        </p>
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+### Create Form Component
+
+```vue
+<!-- src/components/CreatePost.vue -->
+<script setup lang="ts">
+import { ref } from 'vue'
+import { supabase } from '@/lib/supabase'
+
+const title = ref('')
+const content = ref('')
+const loading = ref(false)
+const error = ref<string | null>(null)
+
+const handleSubmit = async () => {
+  try {
+    loading.value = true
+    error.value = null
+
+    const { error: err } = await supabase
+      .from('posts')
+      .insert({ title: title.value, content: content.value })
+
+    if (err) throw err
+
+    title.value = ''
+    content.value = ''
+    alert('Post created successfully!')
+  } catch (err: any) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="max-w-2xl mx-auto">
+    <h2 class="text-2xl font-bold mb-4">Create Post</h2>
+    
+    <div v-if="error" class="mb-4 p-3 bg-red-100 text-red-700 rounded">
+      {{ error }}
+    </div>
+
+    <form @submit.prevent="handleSubmit" class="space-y-4">
+      <div>
+        <label for="title" class="block text-sm font-medium mb-1">Title</label>
+        <input
+          id="title"
+          v-model="title"
+          type="text"
+          class="w-full px-3 py-2 border rounded-lg"
+          required
+        />
+      </div>
+      
+      <div>
+        <label for="content" class="block text-sm font-medium mb-1">Content</label>
+        <textarea
+          id="content"
+          v-model="content"
+          class="w-full px-3 py-2 border rounded-lg"
+          rows="4"
+          required
+        />
+      </div>
+      
+      <button
+        type="submit"
+        :disabled="loading"
+        class="px-4 py-2 bg-blue-500 text-white rounded-lg disabled:opacity-50"
+      >
+        {{ loading ? 'Creating...' : 'Create Post' }}
+      </button>
+    </form>
+  </div>
+</template>
+```
+
+## File Upload
+
+```vue
+<!-- src/components/FileUpload.vue -->
+<script setup lang="ts">
+import { ref } from 'vue'
+import { supabase } from '@/lib/supabase'
+
+const uploading = ref(false)
+const fileUrl = ref<string | null>(null)
+
+const uploadFile = async (event: Event) => {
+  try {
+    uploading.value = true
+
+    const target = event.target as HTMLInputElement
+    if (!target.files || target.files.length === 0) {
+      throw new Error('You must select a file to upload.')
+    }
+
+    const file = target.files[0]
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${Math.random()}.${fileExt}`
+    const filePath = `uploads/${fileName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('files')
+      .upload(filePath, file)
+
+    if (uploadError) throw uploadError
+
+    const { data } = supabase.storage.from('files').getPublicUrl(filePath)
+    fileUrl.value = data.publicUrl
+  } catch (error: any) {
+    alert(error.message)
+  } finally {
+    uploading.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="space-y-4">
+    <div>
+      <label class="block text-sm font-medium mb-1">Upload File</label>
+      <input
+        type="file"
+        @change="uploadFile"
+        :disabled="uploading"
+        class="block w-full"
+      />
+    </div>
+    
+    <div v-if="uploading" class="text-gray-600">
+      Uploading...
+    </div>
+    
+    <div v-if="fileUrl" class="space-y-2">
+      <p class="text-green-600">File uploaded successfully!</p>
+      <a
+        :href="fileUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-blue-500 underline"
+      >
+        View file
+      </a>
+    </div>
+  </div>
+</template>
+```
+
+## Main App Structure
+
+```vue
+<!-- src/App.vue -->
+<script setup lang="ts">
+import { onMounted } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import Auth from '@/components/Auth.vue'
+import Dashboard from '@/components/Dashboard.vue'
+
+const authStore = useAuthStore()
+
+onMounted(() => {
+  authStore.initialize()
+})
+</script>
+
+<template>
+  <div v-if="authStore.loading" class="flex items-center justify-center h-screen">
+    Loading...
+  </div>
+  
+  <div v-else-if="!authStore.isAuthenticated">
+    <Auth />
+  </div>
+  
+  <div v-else>
+    <nav class="bg-white shadow px-4 py-3 flex justify-between items-center">
+      <h1 class="text-xl font-bold">My App</h1>
+      <button
+        @click="authStore.signOut"
+        class="px-4 py-2 bg-red-500 text-white rounded"
+      >
+        Sign Out
+      </button>
+    </nav>
+    
+    <main class="container mx-auto p-4">
+      <Dashboard />
+    </main>
+  </div>
+</template>
+```
+
+## Best Practices
+
+<Card title="Composition API" icon="puzzle-piece">
+  Use composables for reusable Supabase logic.
+</Card>
+
+<Card title="Pinia for State" icon="box">
+  Manage authentication and global state with Pinia.
+</Card>
+
+<Card title="Type Safety" icon="shield">
+  Use TypeScript for type-safe database operations.
+</Card>
+
+<Card title="Reactive Data" icon="bolt">
+  Leverage Vue's reactivity for real-time updates.
+</Card>
+
+<Card title="Lifecycle Hooks" icon="recycle">
+  Clean up subscriptions in onUnmounted.
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Todo App Tutorial" icon="list-check" href="/guides/building-a-todo-app">
+    Build a complete application
+  </Card>
+  <Card title="User Management" icon="users" href="/guides/user-management">
+    Add user profiles
+  </Card>
+  <Card title="File Uploads" icon="upload" href="/guides/file-uploads">
+    Handle file storage
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/overview">
+    Explore more examples
+  </Card>
+</CardGroup>

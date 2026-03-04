@@ -1,0 +1,355 @@
+---
+title: 'Similarity Search'
+description: 'Perform semantic search using vector embeddings and distance metrics'
+---
+
+Similarity search finds items that are semantically similar to a query by comparing vector embeddings. Build powerful search experiences that understand meaning, not just keywords.
+
+## How it Works
+
+Similarity search compares vectors using distance metrics:
+
+```typescript
+// Query: "cat chases mouse"
+const queryEmbedding = [0.2, 0.8, -0.1, ...]
+
+// Documents in database:
+// Doc 1: "kitten hunts rodent"  -> [0.21, 0.79, -0.09, ...]  -> Distance: 0.02 ✓
+// Doc 2: "weather forecast"     -> [-0.5, 0.1, 0.9, ...]   -> Distance: 1.95 ✗
+
+// Return Doc 1 as most similar
+```
+
+## Distance Metrics
+
+<Tabs>
+  <Tab title="Cosine Distance">
+    Measures the angle between vectors. Most common for text embeddings.
+    
+    ```sql
+    select *
+    from documents
+    order by embedding <=> query_embedding
+    limit 10;
+    ```
+    
+    - Range: 0 (identical) to 2 (opposite)
+    - Best for: Text, normalized vectors
+    - Operator: `<=>`
+  </Tab>
+  
+  <Tab title="L2 Distance">
+    Euclidean distance between vectors.
+    
+    ```sql
+    select *
+    from documents
+    order by embedding <-> query_embedding
+    limit 10;
+    ```
+    
+    - Range: 0 (identical) to ∞
+    - Best for: Normalized vectors, spatial data
+    - Operator: `<->`
+  </Tab>
+  
+  <Tab title="Inner Product">
+    Dot product of vectors.
+    
+    ```sql
+    select *
+    from documents
+    order by embedding <#> query_embedding
+    limit 10;
+    ```
+    
+    - Range: -∞ to ∞ (higher is more similar)
+    - Best for: Unnormalized vectors
+    - Operator: `<#>`
+  </Tab>
+</Tabs>
+
+## Basic Similarity Search
+
+### Create a Search Function
+
+```sql
+create or replace function match_documents (
+  query_embedding vector(1536),
+  match_threshold float,
+  match_count int
+)
+returns table (
+  id bigint,
+  content text,
+  similarity float
+)
+language sql stable
+as $$
+  select
+    documents.id,
+    documents.content,
+    1 - (documents.embedding <=> query_embedding) as similarity
+  from documents
+  where 1 - (documents.embedding <=> query_embedding) > match_threshold
+  order by documents.embedding <=> query_embedding
+  limit match_count;
+$$;
+```
+
+### Search from JavaScript
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+import OpenAI from 'openai'
+
+const supabase = createClient(url, key)
+const openai = new OpenAI()
+
+async function searchDocuments(query: string) {
+  // 1. Generate embedding for query
+  const embeddingResponse = await openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: query
+  })
+  const queryEmbedding = embeddingResponse.data[0].embedding
+  
+  // 2. Search for similar documents
+  const { data, error } = await supabase
+    .rpc('match_documents', {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.8,
+      match_count: 10
+    })
+  
+  return data
+}
+
+// Usage
+const results = await searchDocuments('How do I reset my password?')
+```
+
+## Filtered Search
+
+Combine similarity search with filters:
+
+```sql
+create or replace function match_documents_filtered (
+  query_embedding vector(1536),
+  match_threshold float,
+  match_count int,
+  filter_type text
+)
+returns table (
+  id bigint,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+language sql stable
+as $$
+  select
+    documents.id,
+    documents.content,
+    documents.metadata,
+    1 - (documents.embedding <=> query_embedding) as similarity
+  from documents
+  where 1 - (documents.embedding <=> query_embedding) > match_threshold
+    and metadata->>'type' = filter_type
+  order by documents.embedding <=> query_embedding
+  limit match_count;
+$$;
+```
+
+```typescript
+const { data } = await supabase
+  .rpc('match_documents_filtered', {
+    query_embedding: queryEmbedding,
+    match_threshold: 0.8,
+    match_count: 10,
+    filter_type: 'article'
+  })
+```
+
+## Hybrid Search
+
+Combine vector similarity with full-text search:
+
+```sql
+create or replace function hybrid_search (
+  query_text text,
+  query_embedding vector(1536),
+  match_count int
+)
+returns table (
+  id bigint,
+  content text,
+  similarity float,
+  rank float
+)
+language sql stable
+as $$
+  with semantic_search as (
+    select
+      documents.id,
+      row_number() over (order by documents.embedding <=> query_embedding) as rank_number
+    from documents
+    order by documents.embedding <=> query_embedding
+    limit 20
+  ),
+  keyword_search as (
+    select
+      documents.id,
+      row_number() over (order by ts_rank(documents.fts, websearch_to_tsquery(query_text)) desc) as rank_number
+    from documents
+    where documents.fts @@ websearch_to_tsquery(query_text)
+    order by ts_rank(documents.fts, websearch_to_tsquery(query_text)) desc
+    limit 20
+  )
+  select
+    documents.id,
+    documents.content,
+    1 - (documents.embedding <=> query_embedding) as similarity,
+    coalesce(1.0 / (60 + semantic_search.rank_number), 0.0) +
+    coalesce(1.0 / (60 + keyword_search.rank_number), 0.0) as rank
+  from documents
+  left join semantic_search on semantic_search.id = documents.id
+  left join keyword_search on keyword_search.id = documents.id
+  where semantic_search.id is not null or keyword_search.id is not null
+  order by rank desc
+  limit match_count;
+$$;
+```
+
+## Search with React
+
+Complete search component:
+
+```tsx
+import { useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(url, key)
+
+export function SemanticSearch() {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(false)
+  
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    
+    try {
+      // Call Edge Function that generates embedding and searches
+      const { data, error } = await supabase.functions.invoke('search', {
+        body: { query }
+      })
+      
+      if (error) throw error
+      setResults(data.results)
+    } catch (error) {
+      console.error('Search failed:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  return (
+    <div>
+      <form onSubmit={handleSearch}>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search..."
+        />
+        <button type="submit" disabled={loading}>
+          {loading ? 'Searching...' : 'Search'}
+        </button>
+      </form>
+      
+      <div>
+        {results.map((result) => (
+          <div key={result.id}>
+            <h3>{result.title}</h3>
+            <p>{result.content}</p>
+            <span>Similarity: {(result.similarity * 100).toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+## Performance Optimization
+
+### Indexing
+
+Create indexes for fast similarity search:
+
+```sql
+-- IVFFlat index (faster build, good recall)
+create index on documents 
+using ivfflat (embedding vector_cosine_ops)
+with (lists = 100);
+
+-- HNSW index (slower build, better recall)
+create index on documents 
+using hnsw (embedding vector_cosine_ops)
+with (m = 16, ef_construction = 64);
+```
+
+### Query Optimization
+
+<Accordion title="Limit search space">
+  ```sql
+  -- Search within a subset
+  select *
+  from documents
+  where created_at > now() - interval '30 days'
+  order by embedding <=> query_embedding
+  limit 10;
+  ```
+</Accordion>
+
+<Accordion title="Use RLS for security">
+  ```sql
+  create policy "Users can search their own documents"
+  on documents for select
+  using (auth.uid() = user_id);
+  ```
+</Accordion>
+
+<Accordion title="Cache popular queries">
+  ```typescript
+  // Cache in Redis, Vercel KV, etc.
+  const cacheKey = `search:${query}`
+  const cached = await redis.get(cacheKey)
+  
+  if (cached) return JSON.parse(cached)
+  
+  const results = await searchDocuments(query)
+  await redis.set(cacheKey, JSON.stringify(results), { ex: 3600 })
+  
+  return results
+  ```
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="pgvector Guide" href="/ai/pgvector">
+    Learn advanced pgvector features
+  </Card>
+  <Card title="AI Examples" href="/examples/ai">
+    Complete RAG and search examples
+  </Card>
+  <Card title="Vector Embeddings" href="/ai/vector-embeddings">
+    Generate and store embeddings
+  </Card>
+  <Card title="Edge Functions" href="/functions/overview">
+    Build search APIs with Edge Functions
+  </Card>
+</CardGroup>

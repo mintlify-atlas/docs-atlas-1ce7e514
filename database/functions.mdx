@@ -1,0 +1,601 @@
+---
+title: 'Database Functions'
+description: 'Write custom PostgreSQL functions in SQL and PL/pgSQL'
+---
+
+PostgreSQL database functions allow you to encapsulate business logic directly in your database. Functions can be written in SQL, PL/pgSQL, or other procedural languages, and can be called from your application code via the Supabase client libraries.
+
+## Why Use Database Functions?
+
+Database functions provide several advantages:
+
+- **Performance**: Execute complex logic directly in the database, reducing network overhead
+- **Reusability**: Share logic across multiple applications
+- **Security**: Control access with function privileges and security definer/invoker
+- **Data Integrity**: Keep business rules close to your data
+- **API Access**: Call functions via Supabase's auto-generated API
+
+## Creating Functions
+
+Functions can be created through the SQL Editor in the Dashboard or via migrations.
+
+### Simple SQL Function
+
+```sql
+create or replace function hello_world()
+returns text
+language sql
+as $$
+  select 'Hello, World!';
+$$;
+```
+
+Call it with SQL:
+
+```sql
+select hello_world();
+-- Returns: 'Hello, World!'
+```
+
+Or use the JavaScript client:
+
+```javascript
+const { data, error } = await supabase.rpc('hello_world')
+// data: 'Hello, World!'
+```
+
+### Function with Parameters
+
+```sql
+create or replace function greet_user(user_name text)
+returns text
+language sql
+as $$
+  select 'Hello, ' || user_name || '!';
+$$;
+```
+
+```javascript
+const { data, error } = await supabase
+  .rpc('greet_user', { user_name: 'Alice' })
+// data: 'Hello, Alice!'
+```
+
+## PL/pgSQL Functions
+
+PL/pgSQL is a procedural language that provides more control flow options.
+
+### Basic PL/pgSQL Function
+
+```sql
+create or replace function calculate_discount(
+  price numeric,
+  discount_percent numeric
+)
+returns numeric
+language plpgsql
+as $$
+declare
+  discount_amount numeric;
+begin
+  -- Calculate discount
+  discount_amount := price * (discount_percent / 100.0);
+  
+  -- Return final price
+  return price - discount_amount;
+end;
+$$;
+```
+
+```sql
+select calculate_discount(100.00, 15);
+-- Returns: 85.00
+```
+
+### Function with Conditional Logic
+
+```sql
+create or replace function get_shipping_cost(
+  total_amount numeric,
+  country_code text
+)
+returns numeric
+language plpgsql
+as $$
+declare
+  shipping_cost numeric;
+begin
+  -- Free shipping for orders over $100
+  if total_amount >= 100 then
+    return 0;
+  end if;
+  
+  -- Different rates by country
+  case country_code
+    when 'US' then shipping_cost := 9.99;
+    when 'CA' then shipping_cost := 12.99;
+    when 'GB' then shipping_cost := 14.99;
+    else shipping_cost := 19.99;
+  end case;
+  
+  return shipping_cost;
+end;
+$$;
+```
+
+## Returning Data from Tables
+
+Functions can query and return data from tables.
+
+### Return Single Row
+
+```sql
+create or replace function get_product_by_id(product_id bigint)
+returns table (
+  id bigint,
+  name text,
+  price numeric,
+  in_stock boolean
+)
+language sql
+as $$
+  select id, name, price, (quantity > 0) as in_stock
+  from products
+  where id = product_id;
+$$;
+```
+
+### Return Multiple Rows
+
+```sql
+create or replace function get_top_rated_movies(min_rating numeric)
+returns table (
+  id bigint,
+  name text,
+  rating numeric,
+  release_year integer
+)
+language sql
+as $$
+  select id, name, rating, release_year
+  from movies
+  where rating >= min_rating
+  order by rating desc
+  limit 10;
+$$;
+```
+
+Query with filters:
+
+```javascript
+const { data, error } = await supabase
+  .rpc('get_top_rated_movies', { min_rating: 8.0 })
+  .order('release_year', { ascending: false })
+```
+
+### Return Complete Table Rows
+
+```sql
+create or replace function get_active_users()
+returns setof users  -- Returns rows matching the users table structure
+language sql
+as $$
+  select *
+  from users
+  where deleted_at is null
+    and last_login > now() - interval '30 days';
+$$;
+```
+
+## Modifying Data
+
+Functions can insert, update, or delete data.
+
+### Insert Function
+
+```sql
+create or replace function create_product(
+  product_name text,
+  product_price numeric,
+  category_id bigint
+)
+returns bigint
+language plpgsql
+as $$
+declare
+  new_id bigint;
+begin
+  insert into products (name, price, category_id)
+  values (product_name, product_price, category_id)
+  returning id into new_id;
+  
+  return new_id;
+end;
+$$;
+```
+
+```javascript
+const { data, error } = await supabase
+  .rpc('create_product', {
+    product_name: 'Widget',
+    product_price: 29.99,
+    category_id: 5
+  })
+// Returns the new product ID
+```
+
+### Update Function
+
+```sql
+create or replace function update_inventory(
+  product_id bigint,
+  quantity_change integer
+)
+returns boolean
+language plpgsql
+as $$
+declare
+  current_qty integer;
+begin
+  -- Get current quantity
+  select quantity into current_qty
+  from products
+  where id = product_id;
+  
+  -- Check if we have enough stock
+  if current_qty + quantity_change < 0 then
+    raise exception 'Insufficient inventory';
+  end if;
+  
+  -- Update quantity
+  update products
+  set quantity = quantity + quantity_change,
+      updated_at = now()
+  where id = product_id;
+  
+  return true;
+end;
+$$;
+```
+
+## Real Example: Vector Search
+
+Here's a real function from the Supabase source that performs vector similarity search:
+
+```sql
+create or replace function match_page_sections(
+  embedding vector(1536),
+  match_threshold float,
+  match_count int,
+  min_content_length int
+)
+returns table (path text, content text, similarity float)
+language plpgsql
+as $$
+begin
+  return query
+  select
+    page.path,
+    page_section.content,
+    (page_section.embedding <#> embedding) * -1 as similarity
+  from page_section
+  join page on page_section.page_id = page.id
+  
+  -- Filter by content length
+  where length(page_section.content) >= min_content_length
+    -- Filter by similarity threshold
+    and (page_section.embedding <#> embedding) * -1 > match_threshold
+  
+  -- Sort by similarity
+  order by page_section.embedding <#> embedding
+  limit match_count;
+end;
+$$;
+```
+
+## Real Example: Hybrid Search
+
+This function combines full-text search with vector search using reciprocal rank fusion:
+
+```sql
+create or replace function search_content_hybrid(
+  query_text text,
+  query_embedding vector(1536),
+  max_result int default 30,
+  full_text_weight float default 1,
+  semantic_weight float default 1,
+  rrf_k int default 50,
+  match_threshold float default 0.78
+)
+returns table (
+  id bigint,
+  page_title text,
+  type text,
+  href text,
+  content text
+)
+language sql
+as $$
+  with full_text as (
+    -- Full-text search results with ranking
+    select
+      id,
+      row_number() over(order by ts_rank(fts_tokens, websearch_to_tsquery(query_text)) desc) as rank_ix
+    from page
+    where fts_tokens @@ websearch_to_tsquery(query_text)
+    limit max_result * 2
+  ),
+  semantic as (
+    -- Vector search results
+    select
+      page_id as id,
+      row_number() over() as rank_ix
+    from match_embedding(query_embedding, match_threshold, max_result * 2)
+  ),
+  rrf as (
+    -- Combine results using reciprocal rank fusion
+    select
+      coalesce(full_text.id, semantic.id) as id,
+      coalesce(1.0 / (rrf_k + full_text.rank_ix), 0.0) * full_text_weight +
+      coalesce(1.0 / (rrf_k + semantic.rank_ix), 0.0) * semantic_weight as score
+    from full_text
+    full outer join semantic on full_text.id = semantic.id
+  )
+  select
+    page.id,
+    page.meta->>'title' as page_title,
+    page.type,
+    page.path as href,
+    page.content
+  from rrf
+  join page on page.id = rrf.id
+  where rrf.score > 0
+  order by rrf.score desc
+  limit max_result;
+$$;
+```
+
+## Security Settings
+
+### Security Definer vs Invoker
+
+```sql
+-- Runs with creator's permissions (security definer)
+create function admin_function()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Can access tables the creator has access to
+  delete from sensitive_table where expired = true;
+end;
+$$;
+
+-- Runs with caller's permissions (security invoker - default)
+create function user_function()
+returns void
+language plpgsql
+security invoker
+as $$
+begin
+  -- Can only access what the caller has access to
+  select * from public.products;
+end;
+$$;
+```
+
+<Warning>
+  When using `security definer`, always set `search_path` to prevent security vulnerabilities.
+</Warning>
+
+### Function Privileges
+
+Control who can execute functions:
+
+```sql
+-- Revoke public execution
+revoke execute on function sensitive_function() from public;
+revoke execute on function sensitive_function() from anon;
+
+-- Grant to specific role
+grant execute on function sensitive_function() to authenticated;
+```
+
+Restrict all new functions by default:
+
+```sql
+alter default privileges in schema public
+  revoke execute on functions from public;
+
+alter default privileges in schema public
+  revoke execute on functions from anon, authenticated;
+```
+
+## Error Handling
+
+### Raising Exceptions
+
+```sql
+create or replace function withdraw_funds(
+  account_id bigint,
+  amount numeric
+)
+returns void
+language plpgsql
+as $$
+declare
+  current_balance numeric;
+begin
+  -- Get current balance
+  select balance into current_balance
+  from accounts
+  where id = account_id;
+  
+  -- Validate amount
+  if amount <= 0 then
+    raise exception 'Amount must be positive';
+  end if;
+  
+  -- Check sufficient funds
+  if current_balance < amount then
+    raise exception 'Insufficient funds. Balance: %, Requested: %',
+      current_balance, amount;
+  end if;
+  
+  -- Perform withdrawal
+  update accounts
+  set balance = balance - amount
+  where id = account_id;
+end;
+$$;
+```
+
+### Using Assertions
+
+```sql
+create or replace function process_order(order_id bigint)
+returns void
+language plpgsql
+as $$
+declare
+  order_total numeric;
+begin
+  select total into order_total
+  from orders
+  where id = order_id;
+  
+  -- Throw error if order not found
+  assert order_total is not null, 'Order not found';
+  
+  -- Throw error if invalid total
+  assert order_total > 0, 'Invalid order total';
+  
+  -- Process the order...
+end;
+$$;
+```
+
+### Catching Exceptions
+
+```sql
+create or replace function safe_insert_product(product_name text)
+returns text
+language plpgsql
+as $$
+begin
+  insert into products (name) values (product_name);
+  return 'Success';
+exception
+  when unique_violation then
+    return 'Product already exists';
+  when others then
+    return 'Error: ' || sqlerrm;
+end;
+$$;
+```
+
+## Debugging Functions
+
+### Adding Logs
+
+```sql
+create or replace function debug_function(input_val text)
+returns text
+language plpgsql
+as $$
+declare
+  result text;
+begin
+  raise log 'Function started with input: %', input_val;
+  
+  -- Do some work
+  result := upper(input_val);
+  
+  raise log 'Result calculated: %', result;
+  
+  return result;
+end;
+$$;
+```
+
+View logs in Dashboard → Logs → Postgres Logs.
+
+### Warning and Error Levels
+
+```sql
+begin
+  raise log 'Informational message';
+  raise warning 'Warning message: %', variable;
+  raise exception 'Error message - stops execution';
+end;
+```
+
+## Performance Tips
+
+<AccordionGroup>
+  <Accordion title="Use SQL over PL/pgSQL when possible">
+    SQL functions are often faster as the query planner can inline them.
+  </Accordion>
+
+  <Accordion title="Set search_path for security">
+    Always set `search_path` on security definer functions.
+  </Accordion>
+
+  <Accordion title="Return SETOF for table data">
+    Use `returns setof table_name` or `returns table(...)` for better performance.
+  </Accordion>
+
+  <Accordion title="Use STABLE or IMMUTABLE">
+    Mark functions as `stable` or `immutable` when applicable for better optimization.
+  </Accordion>
+</AccordionGroup>
+
+### Function Volatility
+
+```sql
+-- IMMUTABLE: always returns same result for same inputs
+create function add_numbers(a int, b int)
+returns int
+language sql
+immutable
+as $$
+  select a + b;
+$$;
+
+-- STABLE: same result within a single query
+create function get_current_date()
+returns date
+language sql
+stable
+as $$
+  select current_date;
+$$;
+
+-- VOLATILE: result may change (default)
+create function generate_id()
+returns uuid
+language sql
+volatile
+as $$
+  select gen_random_uuid();
+$$;
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Triggers" icon="bolt" href="/database/triggers">
+    Automatically execute functions on table events
+  </Card>
+  <Card title="Tables" icon="table" href="/database/tables">
+    Learn about creating and managing tables
+  </Card>
+  <Card title="Extensions" icon="puzzle-piece" href="/database/extensions">
+    Extend PostgreSQL with powerful extensions
+  </Card>
+  <Card title="API Reference" icon="code" href="/reference/javascript/rpc">
+    Call functions from your application
+  </Card>
+</CardGroup>

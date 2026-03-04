@@ -1,0 +1,550 @@
+---
+title: Updates
+description: Keep your self-hosted Supabase installation up-to-date
+---
+
+Regular updates are critical for security, performance, and accessing new features. This guide covers the update process and version management for self-hosted Supabase.
+
+## Update Strategy
+
+<Warning>
+  **Always backup your database before updating!** Updates can include breaking changes or migration scripts that modify your data.
+</Warning>
+
+### Update Frequency
+
+**Recommended schedule**:
+
+- **Security patches**: Within 48 hours of release
+- **Minor updates**: Monthly
+- **Major updates**: Quarterly (after testing)
+
+**Monitor for updates**:
+- [CHANGELOG.md](https://github.com/supabase/supabase/blob/master/docker/CHANGELOG.md)
+- [GitHub Releases](https://github.com/supabase/supabase/releases)
+- [Supabase Discord](https://discord.supabase.com) #self-hosting channel
+
+## Before Updating
+
+<Steps>
+  <Step title="Review Changelog">
+    Check `docker/CHANGELOG.md` for:
+    - Breaking changes
+    - Required configuration updates
+    - Database migrations
+    - Known issues
+    
+    ```bash
+    # View recent changes
+    cd supabase/docker
+    git pull
+    cat CHANGELOG.md | head -100
+    ```
+  </Step>
+  
+  <Step title="Backup Database">
+    Create a full backup:
+    
+    ```bash
+    # Full database dump
+    docker exec supabase-db pg_dump -U postgres postgres > backup_$(date +%Y%m%d).sql
+    
+    # Backup configuration
+    cp .env .env.backup
+    cp -r volumes volumes.backup
+    ```
+  </Step>
+  
+  <Step title="Test in Staging">
+    If possible, test updates in a staging environment first:
+    
+    ```bash
+    # Clone production environment
+    cp -r supabase supabase-staging
+    cd supabase-staging/docker
+    
+    # Update staging
+    git pull
+    docker compose pull
+    docker compose up -d
+    
+    # Verify functionality
+    ```
+  </Step>
+  
+  <Step title="Schedule Maintenance Window">
+    - Notify users of planned downtime
+    - Choose low-traffic period
+    - Prepare rollback plan
+    - Have team available for issues
+  </Step>
+</Steps>
+
+## Update Process
+
+### Standard Update
+
+For most updates without breaking changes:
+
+<CodeGroup>
+```bash Quick Update
+# Navigate to docker directory
+cd supabase/docker
+
+# Pull latest configuration
+git pull
+
+# Pull latest images
+docker compose pull
+
+# Stop services
+docker compose down
+
+# Start with new images
+docker compose up -d
+
+# Monitor logs
+docker compose logs -f
+```
+
+```bash Verbose Update
+# 1. Pull repository changes
+git fetch --all
+git pull origin master
+
+# 2. Review changes
+git log --oneline -10
+git diff HEAD~1 docker-compose.yml
+
+# 3. Update .env if needed
+diff .env.example .env
+
+# 4. Pull Docker images
+docker compose pull
+
+# 5. Stop services gracefully
+docker compose stop
+
+# 6. Remove old containers
+docker compose rm -f
+
+# 7. Start with new configuration
+docker compose up -d
+
+# 8. Verify services
+docker compose ps
+```
+</CodeGroup>
+
+### Breaking Changes Update
+
+When changelog indicates breaking changes:
+
+<Steps>
+  <Step title="Review Configuration Changes">
+    Check for new environment variables or changed formats:
+    
+    ```bash
+    # Compare environment files
+    diff .env.example .env
+    
+    # Add new required variables
+    vim .env
+    ```
+  </Step>
+  
+  <Step title="Update docker-compose.yml">
+    If the changelog mentions docker-compose changes:
+    
+    ```bash
+    # Backup current file
+    cp docker-compose.yml docker-compose.yml.backup
+    
+    # Review changes
+    git diff HEAD~1 docker-compose.yml
+    
+    # Apply changes (manual merge if you have custom config)
+    ```
+  </Step>
+  
+  <Step title="Update Volume Configurations">
+    Some updates require changes to mounted config files:
+    
+    ```bash
+    # Example: Vector logging config update
+    diff volumes/logs/vector.yml.backup volumes/logs/vector.yml
+    
+    # Example: Kong routes update
+    diff volumes/api/kong.yml.backup volumes/api/kong.yml
+    ```
+  </Step>
+  
+  <Step title="Run Database Migrations">
+    If changelog mentions database migrations:
+    
+    ```bash
+    # Check for migration files
+    ls -la volumes/db/migrations/
+    
+    # Migrations run automatically on startup
+    docker compose up -d db
+    docker compose logs -f db
+    ```
+  </Step>
+</Steps>
+
+## Version History
+
+Track which versions you're running:
+
+```bash
+# Check current image versions
+docker compose images
+
+# Check specific service version
+docker inspect supabase-db | grep -i version
+
+# Save version snapshot
+docker compose images > versions_$(date +%Y%m%d).txt
+```
+
+### Version File
+
+The repository includes `docker/versions.md` with complete version history:
+
+```markdown
+## 2026-02-16
+- supabase/studio:2026.02.16-sha-26c615c
+- supabase/gotrue:v2.186.0
+- postgrest/postgrest:v14.5
+- supabase/realtime:v2.76.5
+- supabase/storage-api:v1.37.8
+- supabase/postgres:15.8.1.085
+```
+
+## Service-Specific Updates
+
+### PostgreSQL Updates
+
+**Major version upgrades require pg_upgrade**:
+
+<Warning>
+  PostgreSQL major version upgrades (e.g., 15 → 16) require special handling. Plan carefully.
+</Warning>
+
+```bash
+# Before upgrading
+docker exec supabase-db psql -U postgres -c "SELECT version();"
+
+# After upgrading
+docker compose up -d db
+docker compose logs db | grep -i "database system is ready"
+```
+
+### Studio Updates
+
+Studio updates usually require no manual intervention:
+
+```bash
+# Pull latest Studio image
+docker compose pull studio
+
+# Restart Studio
+docker compose up -d studio
+
+# Verify Studio is healthy
+curl http://localhost:3000/api/platform/profile
+```
+
+### Auth (GoTrue) Updates
+
+Auth updates may include new features or security fixes:
+
+```bash
+# Review GoTrue changelog
+# https://github.com/supabase/auth/blob/master/CHANGELOG.md
+
+# Update
+docker compose pull auth
+docker compose up -d auth
+
+# Test authentication
+curl http://localhost:8000/auth/v1/health
+```
+
+### Storage Updates
+
+Storage updates may require configuration changes for S3:
+
+```bash
+# Check for storage-specific config in changelog
+cat CHANGELOG.md | grep -A 10 "Storage"
+
+# Update storage
+docker compose pull storage imgproxy
+docker compose up -d storage imgproxy
+```
+
+## Rollback Procedure
+
+If an update causes issues:
+
+<Steps>
+  <Step title="Stop Services">
+    ```bash
+    docker compose down
+    ```
+  </Step>
+  
+  <Step title="Restore Configuration">
+    ```bash
+    # Restore .env
+    cp .env.backup .env
+    
+    # Restore volumes (if needed)
+    rm -rf volumes
+    cp -r volumes.backup volumes
+    ```
+  </Step>
+  
+  <Step title="Restore Database">
+    ```bash
+    # Stop database
+    docker compose stop db
+    
+    # Restore from backup
+    docker exec -i supabase-db psql -U postgres postgres < backup_20260304.sql
+    
+    # Start database
+    docker compose start db
+    ```
+  </Step>
+  
+  <Step title="Pin Previous Versions">
+    Edit `docker-compose.yml` to use previous image tags:
+    
+    ```yaml
+    db:
+      image: supabase/postgres:15.8.1.060  # Previous version
+    
+    auth:
+      image: supabase/gotrue:v2.185.0  # Previous version
+    ```
+    
+    Then start services:
+    ```bash
+    docker compose up -d
+    ```
+  </Step>
+  
+  <Step title="Verify Functionality">
+    ```bash
+    # Check all services
+    docker compose ps
+    
+    # Test API
+    curl http://localhost:8000/rest/v1/
+    
+    # Check logs for errors
+    docker compose logs --tail=50
+    ```
+  </Step>
+</Steps>
+
+## Update Automation
+
+### Automated Image Pulls
+
+Create a weekly update check:
+
+```bash update-check.sh
+#!/bin/bash
+set -e
+
+cd /path/to/supabase/docker
+
+# Pull latest repository
+git fetch origin
+
+# Check for new commits
+LOCAL=$(git rev-parse HEAD)
+REMOTE=$(git rev-parse origin/master)
+
+if [ $LOCAL != $REMOTE ]; then
+    echo "Updates available!"
+    echo "New commits:"
+    git log HEAD..origin/master --oneline
+    
+    # Send notification
+    echo "Supabase updates available" | mail -s "Supabase Update" admin@example.com
+else
+    echo "No updates available"
+fi
+```
+
+Schedule with cron:
+
+```bash
+# Check weekly on Sundays at 6 AM
+0 6 * * 0 /path/to/update-check.sh
+```
+
+### Watchtower Integration
+
+Automate image updates with Watchtower (use with caution):
+
+```yaml docker-compose.override.yml
+version: '3.8'
+
+services:
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_SCHEDULE=0 0 3 * * 0  # 3 AM every Sunday
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - WATCHTOWER_MONITOR_ONLY=true  # Set false to auto-update
+    command: --interval 86400
+```
+
+<Warning>
+  Automatic updates can cause unexpected downtime. Only enable in non-production environments.
+</Warning>
+
+## Monitoring for Updates
+
+### GitHub Watch
+
+Watch the Supabase repository:
+
+1. Visit https://github.com/supabase/supabase
+2. Click "Watch" → "Custom"
+3. Select "Releases"
+4. Get email notifications for new releases
+
+### RSS Feed
+
+Subscribe to GitHub releases RSS:
+
+```
+https://github.com/supabase/supabase/releases.atom
+```
+
+### Discord Notifications
+
+Join #self-hosting channel on [Discord](https://discord.supabase.com):
+- Update announcements
+- Community discussions
+- Known issues
+
+## Recent Updates
+
+Latest significant updates (as of February 2026):
+
+### 2026-02-16 Release
+
+<AccordionGroup>
+  <Accordion title="Breaking Changes" icon="triangle-exclamation">
+    - **Analytics (Logflare)**: Changed default to disable public access
+    - **Vector**: Major version jump from 0.28.1 to 0.53.0
+    - **Storage**: New environment variables required
+    
+    **Action Required**: Update `docker-compose.yml` and `volumes/logs/vector.yml`
+  </Accordion>
+
+  <Accordion title="New Features" icon="sparkles">
+    - **Studio**: Edge Functions management UI
+    - **Storage**: S3 protocol endpoint access at `/storage/v1/s3`
+    - **Edge Runtime**: Deno cache volume for faster cold starts
+  </Accordion>
+
+  <Accordion title="Security Fixes" icon="shield">
+    - **Auth (GoTrue)**: Security-related patches in v2.185.0
+    - **Analytics**: Disabled public dashboard access by default
+    - Updated PostgREST to v14.5 with security improvements
+  </Accordion>
+</AccordionGroup>
+
+### 2026-01-27 Release
+
+- **Studio**: SQL snippets management
+- **Realtime**: Reduced healthcheck logging
+- **PostgREST**: Upgraded to v14.3
+
+### 2025-12-18 Release
+
+- **Studio**: React2Shell security fixes
+- **Auth**: Updated to v2.184.0
+- New utility scripts: `generate-keys.sh` and `db-passwd.sh`
+
+See [complete changelog](https://github.com/supabase/supabase/blob/master/docker/CHANGELOG.md).
+
+## Update Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always Read Changelog First" icon="book">
+    Never update blindly. Review all changes, especially breaking changes and security notices.
+  </Accordion>
+
+  <Accordion title="Test Before Production" icon="flask">
+    Use staging environment to test updates. Verify all functionality before applying to production.
+  </Accordion>
+
+  <Accordion title="Backup Everything" icon="hard-drive">
+    Database, configuration files, and volumes. Test restore procedure regularly.
+  </Accordion>
+
+  <Accordion title="Update During Low Traffic" icon="clock">
+    Schedule updates during maintenance windows. Communicate downtime to users.
+  </Accordion>
+
+  <Accordion title="One Service at a Time" icon="layer-group">
+    For major updates, update and test individual services before updating all.
+  </Accordion>
+
+  <Accordion title="Monitor After Update" icon="chart-line">
+    Watch logs and metrics closely for 24 hours after update. Be ready to rollback.
+  </Accordion>
+
+  <Accordion title="Document Changes" icon="file-lines">
+    Keep notes on what was updated, when, and any issues encountered.
+  </Accordion>
+</AccordionGroup>
+
+## Getting Help
+
+If you encounter issues:
+
+<CardGroup cols={2}>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/supabase/supabase/issues">
+    Search existing issues or report new ones
+  </Card>
+  <Card title="Discord Community" icon="discord" href="https://discord.supabase.com">
+    Ask in #self-hosting channel
+  </Card>
+  <Card title="GitHub Discussions" icon="comments" href="https://github.com/orgs/supabase/discussions">
+    Community support and questions
+  </Card>
+  <Card title="Documentation" icon="book" href="https://supabase.com/docs">
+    Official guides and references
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security" icon="shield" href="/self-hosting/security">
+    Secure your installation
+  </Card>
+  <Card title="Configuration" icon="gear" href="/self-hosting/configuration">
+    Optimize your setup
+  </Card>
+  <Card title="Monitoring" icon="chart-mixed">
+    Set up monitoring and alerts
+  </Card>
+  <Card title="Backup Strategy" icon="database">
+    Implement backup automation
+  </Card>
+</CardGroup>

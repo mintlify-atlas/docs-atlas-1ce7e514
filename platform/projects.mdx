@@ -1,0 +1,300 @@
+---
+title: Projects
+description: Manage and configure your Supabase projects
+---
+
+A Supabase project is an isolated instance of all Supabase services with its own dedicated Postgres database, authentication system, APIs, and storage. Each project has its own API keys and database credentials.
+
+## Creating a Project
+
+When you create a new project, Supabase provisions:
+
+- A dedicated Postgres database
+- Authentication service
+- Auto-generated REST and GraphQL APIs
+- Real-time server for subscriptions
+- Storage buckets
+- Edge Functions runtime
+- Observability and logging
+
+<Steps>
+  <Step title="Choose Organization">
+    Select the organization where you want to create the project. You can create multiple projects within an organization.
+  </Step>
+  
+  <Step title="Project Settings">
+    Configure your project:
+    - **Name**: A friendly name for your project
+    - **Database Password**: Strong password for the `postgres` user
+    - **Region**: Geographic location for your database (choose closest to your users)
+    - **Pricing Plan**: Free, Pro, Team, or Enterprise
+  </Step>
+  
+  <Step title="Wait for Provisioning">
+    Project creation takes 1-2 minutes. Supabase will set up your database, configure all services, and generate API keys.
+  </Step>
+</Steps>
+
+## Project Dashboard
+
+The project dashboard provides access to all Supabase features:
+
+### Table Editor
+
+Visually create and manage database tables:
+
+- Create tables with columns and data types
+- Define foreign key relationships
+- Set up indexes for performance
+- Manage table data with spreadsheet-like interface
+
+### SQL Editor
+
+Run SQL queries and manage your database:
+
+```sql
+-- Create a table
+CREATE TABLE posts (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT,
+  author_id UUID REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
+
+-- Create a policy
+CREATE POLICY "Users can read their own posts"
+  ON posts FOR SELECT
+  USING (auth.uid() = author_id);
+```
+
+<Tip>
+  Use SQL snippets to save frequently used queries. The SQL Editor includes syntax highlighting, autocomplete, and query history.
+</Tip>
+
+### Authentication
+
+Configure authentication providers and manage users:
+
+- **Email Providers**: Configure SMTP settings for email verification
+- **OAuth Providers**: Enable Google, GitHub, GitLab, Bitbucket, Azure, and more
+- **Phone Auth**: Set up SMS providers like Twilio or MessageBird
+- **SAML SSO**: Enterprise single sign-on (Enterprise plan)
+- **User Management**: View users, reset passwords, and manage sessions
+
+### Database
+
+Manage database configuration:
+
+- **Backups**: Automated daily backups with point-in-time recovery (Pro+)
+- **Extensions**: Enable Postgres extensions like `pgvector`, `pg_cron`, `PostGIS`
+- **Roles**: Manage database roles and permissions
+- **Replication**: Set up read replicas (Enterprise)
+- **Functions**: Create and manage database functions
+- **Triggers**: Set up database triggers
+- **Publications**: Configure logical replication
+
+### Storage
+
+Manage file storage:
+
+- Create storage buckets
+- Configure public/private access
+- Set file size limits
+- Enable image transformations
+- Configure CORS policies
+
+### Edge Functions
+
+Deploy serverless functions:
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async (req) => {
+  const { name } = await req.json()
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!
+  )
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('name', name)
+
+  return new Response(
+    JSON.stringify({ data, error }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+### Logs
+
+Monitor your project:
+
+- **Postgres Logs**: Database queries and errors
+- **PostgREST Logs**: API requests and responses
+- **Auth Logs**: Authentication events
+- **Realtime Logs**: Websocket connections
+- **Storage Logs**: File operations
+- **Edge Functions Logs**: Function invocations
+
+## Project Settings
+
+### General Settings
+
+- **Project Name**: Update project display name
+- **Organization**: Transfer project to another organization
+- **Region**: View deployment region (cannot be changed)
+- **Reference ID**: Unique project identifier
+- **Pause Project**: Pause inactive projects (Free plan)
+- **Delete Project**: Permanently delete project and all data
+
+### API Keys
+
+Every project has unique API keys:
+
+<CodeGroup>
+```bash Project URL
+https://[PROJECT_REF].supabase.co
+```
+
+```bash Anon (Public) Key
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+```bash Service Role (Secret) Key
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+</CodeGroup>
+
+<Warning>
+  The `service_role` key bypasses Row Level Security. Never expose it in client-side code or public repositories.
+</Warning>
+
+### Database Settings
+
+**Connection String**:
+
+```bash Direct Connection
+postgresql://postgres:[PASSWORD]@db.[PROJECT_REF].supabase.co:5432/postgres
+```
+
+```bash Connection Pooling (recommended)
+postgresql://postgres:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+```
+
+**SSL Required**: All connections require SSL/TLS encryption.
+
+### Network Restrictions
+
+Control access to your project:
+
+- **Allowed IP Addresses**: Restrict database access to specific IPs (Pro+)
+- **SSL Enforcement**: Require SSL for all connections
+- **IPv6 Support**: Enable IPv6 connectivity
+
+### Custom Domains
+
+Use your own domain for the API (Pro+):
+
+- `api.yourdomain.com` → Supabase API
+- Custom vanity URLs for storage and edge functions
+- Automatic SSL certificate provisioning
+
+## Project Limits
+
+Limits vary by plan:
+
+| Resource | Free | Pro | Team | Enterprise |
+|----------|------|-----|------|------------|
+| Database Size | 500 MB | 8 GB | 100 GB | Unlimited |
+| Storage | 1 GB | 100 GB | 100 GB | Unlimited |
+| Bandwidth | 2 GB | 50 GB | 250 GB | Unlimited |
+| Edge Functions | 500K invocations | 2M invocations | 10M invocations | Custom |
+| Monthly Active Users | Unlimited | Unlimited | Unlimited | Unlimited |
+
+<Tip>
+  Free projects automatically pause after 7 days of inactivity. Visit your project dashboard to reactivate.
+</Tip>
+
+## Environment Variables
+
+Use environment variables in your application:
+
+<CodeGroup>
+```javascript JavaScript
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+import { createClient } from '@supabase/supabase-js'
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+```
+
+```python Python
+import os
+from supabase import create_client, Client
+
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
+```
+
+```dart Flutter
+final supabase = Supabase.instance.client;
+
+// Initialize in main.dart
+await Supabase.initialize(
+  url: 'YOUR_SUPABASE_URL',
+  anonKey: 'YOUR_ANON_KEY',
+);
+```
+</CodeGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Connection Pooling" icon="pool-8-ball">
+    Always use the connection pooler (port 6543) for serverless and edge environments to avoid connection exhaustion.
+  </Accordion>
+
+  <Accordion title="Enable Row Level Security" icon="shield-check">
+    Always enable RLS on tables containing user data. Create policies to control access at the database level.
+  </Accordion>
+
+  <Accordion title="Rotate API Keys" icon="rotate">
+    Regularly rotate your service role key, especially after team member changes. Update all production deployments.
+  </Accordion>
+
+  <Accordion title="Monitor Usage" icon="chart-line">
+    Set up billing alerts to track database size, bandwidth, and edge function invocations.
+  </Accordion>
+
+  <Accordion title="Use Multiple Environments" icon="code-branch">
+    Create separate projects for development, staging, and production. Never test in production.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Design" icon="table" href="/essentials/database">
+    Learn database best practices
+  </Card>
+  <Card title="Authentication" icon="shield" href="/essentials/authentication">
+    Set up user authentication
+  </Card>
+  <Card title="Organizations" icon="users" href="/platform/organizations">
+    Manage team access
+  </Card>
+  <Card title="Billing" icon="credit-card" href="/platform/billing">
+    Understand costs and usage
+  </Card>
+</CardGroup>

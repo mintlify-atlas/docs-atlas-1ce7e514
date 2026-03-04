@@ -1,0 +1,386 @@
+---
+title: 'Installing the Supabase CLI'
+description: 'Step-by-step guide to installing the Supabase CLI on any platform'
+---
+
+The Supabase CLI is available for macOS, Windows, and Linux. Choose your installation method based on your operating system and preferences.
+
+## Prerequisites
+
+Before installing the Supabase CLI, ensure you have:
+
+- **Docker Desktop** (or compatible container runtime) - Required for running Supabase locally
+- **Node.js 20+** (if using npm/npx method)
+
+<Note>
+While the CLI can be installed via npm, it requires Node.js 20 or later. Older versions like Node.js 16 are not supported.
+</Note>
+
+## Installation Methods
+
+<Tabs>
+  <Tab title="macOS">
+    ### Using Homebrew (Recommended)
+    
+    The easiest way to install the CLI on macOS is using [Homebrew](https://brew.sh):
+    
+    ```bash
+    brew install supabase/tap/supabase
+    ```
+    
+    ### Verify Installation
+    
+    After installation, verify the CLI is working:
+    
+    ```bash
+    supabase --version
+    ```
+    
+    ### Updating
+    
+    To update to the latest version:
+    
+    ```bash
+    brew upgrade supabase
+    ```
+  </Tab>
+  
+  <Tab title="Windows">
+    ### Using Scoop (Recommended)
+    
+    Install the CLI using [Scoop](https://scoop.sh):
+    
+    ```powershell
+    scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+    scoop install supabase
+    ```
+    
+    ### Verify Installation
+    
+    After installation, verify the CLI is working:
+    
+    ```powershell
+    supabase --version
+    ```
+    
+    ### Updating
+    
+    To update to the latest version:
+    
+    ```powershell
+    scoop update supabase
+    ```
+  </Tab>
+  
+  <Tab title="Linux">
+    ### Using Homebrew
+    
+    Install via [Homebrew on Linux](https://docs.brew.sh/Homebrew-on-Linux):
+    
+    ```bash
+    brew install supabase/tap/supabase
+    ```
+    
+    To update:
+    
+    ```bash
+    brew upgrade supabase
+    ```
+    
+    ### Using Linux Packages
+    
+    Download the appropriate package from the [CLI releases page](https://github.com/supabase/cli/releases):
+    
+    <AccordionGroup>
+      <Accordion title="Alpine Linux (.apk)">
+        ```bash
+        # Download the .apk file from releases
+        sudo apk add --allow-untrusted supabase_<version>_linux_amd64.apk
+        ```
+      </Accordion>
+      
+      <Accordion title="Debian/Ubuntu (.deb)">
+        ```bash
+        # Download the .deb file from releases
+        sudo dpkg -i supabase_<version>_linux_amd64.deb
+        ```
+      </Accordion>
+      
+      <Accordion title="Fedora/RHEL (.rpm)">
+        ```bash
+        # Download the .rpm file from releases
+        sudo rpm -i supabase_<version>_linux_amd64.rpm
+        ```
+      </Accordion>
+    </AccordionGroup>
+    
+    ### Updating Linux Packages
+    
+    To update, download the latest package and reinstall using the same command.
+  </Tab>
+  
+  <Tab title="npm/npx">
+    ### Using npx (No Installation)
+    
+    Run the CLI without installing by prefixing commands with `npx`:
+    
+    ```bash
+    npx supabase --help
+    ```
+    
+    <Warning>
+    The Supabase CLI requires **Node.js 20 or later** when run via `npx` or `npm`. Older Node.js versions are not supported.
+    </Warning>
+    
+    ### Install as Dev Dependency
+    
+    Install the CLI as a development dependency in your project:
+    
+    ```bash
+    npm install supabase --save-dev
+    ```
+    
+    Then use it via npm scripts:
+    
+    ```json package.json
+    {
+      "scripts": {
+        "supabase": "supabase",
+        "db:start": "supabase start",
+        "db:stop": "supabase stop"
+      }
+    }
+    ```
+    
+    ### Updating
+    
+    To update the CLI:
+    
+    ```bash
+    npm update supabase --save-dev
+    ```
+  </Tab>
+</Tabs>
+
+## Installing Docker
+
+The Supabase CLI uses Docker containers to run the local development stack. Install Docker Desktop for your platform:
+
+<Tabs>
+  <Tab title="macOS">
+    ### Docker Desktop for macOS
+    
+    1. Download [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
+    2. Install and start Docker Desktop
+    3. Configure Docker settings:
+    
+    <Frame>
+      <img src="/images/docker-mac-settings.png" alt="Docker settings on Mac" />
+    </Frame>
+    
+    **Recommended Settings:**
+    - ✅ Use integrated virtualization framework
+    - ✅ Enable VirtioFS
+    - ✅ Use osxfs (legacy) file sharing
+    
+    ### Alternative Container Runtimes
+    
+    You can also use:
+    - [OrbStack](https://orbstack.dev/) - Lightweight Docker alternative for macOS
+    - [Colima](https://github.com/abiosoft/colima) - Container runtime for macOS
+    - [Rancher Desktop](https://rancherdesktop.io/) - Open-source Docker alternative
+  </Tab>
+  
+  <Tab title="Windows">
+    ### Docker Desktop for Windows
+    
+    1. Download [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
+    2. Install and start Docker Desktop
+    3. Configure Docker settings:
+    
+    <Frame>
+      <img src="/images/docker-windows-settings.png" alt="Docker settings on Windows" />
+    </Frame>
+    
+    **Recommended Settings:**
+    - ✅ Use the WSL 2 based engine
+    - ✅ Expose daemon on tcp://localhost:2375
+    - ✅ Add /etc/hosts file entries
+    
+    ### Alternative Container Runtimes
+    
+    - [Rancher Desktop](https://rancherdesktop.io/)
+    - [Podman](https://podman.io/)
+  </Tab>
+  
+  <Tab title="Linux">
+    ### Docker Engine for Linux
+    
+    Install Docker Engine following the [official Linux installation guide](https://docs.docker.com/engine/install/).
+    
+    ### Alternative Container Runtimes
+    
+    - [Podman](https://podman.io/) - Daemonless container engine
+    - [Rancher Desktop](https://rancherdesktop.io/)
+  </Tab>
+</Tabs>
+
+## Post-Installation
+
+### Verify Docker Installation
+
+Verify Docker is running:
+
+```bash
+docker --version
+docker ps
+```
+
+### Verify Supabase CLI Installation
+
+Check that the CLI is properly installed:
+
+```bash
+supabase --version
+```
+
+You should see output like:
+
+```
+supabase 1.x.x
+```
+
+### First-Time Setup
+
+The first time you run `supabase start`, the CLI will download all necessary Docker images. This may take several minutes:
+
+```bash
+supabase init
+supabase start
+```
+
+<Info>
+The initial download includes images for PostgreSQL, PostgREST, GoTrue, Kong, Realtime, Storage, and other services - approximately 2-3 GB total.
+</Info>
+
+## Updating the CLI
+
+### When to Update
+
+Check for new releases on the [Supabase CLI releases page](https://github.com/supabase/cli/releases). We recommend updating regularly to get the latest features and bug fixes.
+
+### Update Process
+
+Update the CLI using the same method you used to install it:
+
+<Tabs>
+  <Tab title="macOS (Homebrew)">
+    ```bash
+    brew upgrade supabase
+    ```
+  </Tab>
+  
+  <Tab title="Windows (Scoop)">
+    ```powershell
+    scoop update supabase
+    ```
+  </Tab>
+  
+  <Tab title="Linux (Homebrew)">
+    ```bash
+    brew upgrade supabase
+    ```
+  </Tab>
+  
+  <Tab title="npm">
+    ```bash
+    npm update supabase --save-dev
+    ```
+  </Tab>
+</Tabs>
+
+### Important: Stop Containers Before Upgrading
+
+<Warning>
+Before upgrading, stop your local Supabase containers and delete data volumes to ensure services can apply new migrations cleanly.
+</Warning>
+
+**Backup and stop running containers:**
+
+```bash
+# Save your schema changes
+supabase db diff -f my_schema
+
+# Save your data
+supabase db dump --local --data-only > supabase/seed.sql
+
+# Stop and remove containers (--no-backup deletes volumes)
+supabase stop --no-backup
+```
+
+After upgrading, restart:
+
+```bash
+supabase start
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Command not found: supabase">
+    **macOS/Linux:**
+    - Ensure Homebrew's bin directory is in your PATH
+    - Restart your terminal
+    - Try running with full path: `/opt/homebrew/bin/supabase`
+    
+    **Windows:**
+    - Ensure Scoop's shims directory is in your PATH
+    - Restart PowerShell/Command Prompt
+  </Accordion>
+  
+  <Accordion title="Docker not running">
+    Error: `Cannot connect to the Docker daemon`
+    
+    **Solution:**
+    - Start Docker Desktop
+    - Verify Docker is running: `docker ps`
+    - On Linux, ensure your user is in the docker group: `sudo usermod -aG docker $USER`
+  </Accordion>
+  
+  <Accordion title="Node.js version too old">
+    Error when using npx: `The Supabase CLI requires Node.js 20 or later`
+    
+    **Solution:**
+    - Update Node.js to version 20 or later
+    - Use a different installation method (Homebrew, Scoop)
+    - Use a Node version manager like [nvm](https://github.com/nvm-sh/nvm)
+  </Accordion>
+  
+  <Accordion title="Port already in use">
+    Error: `Port 54321 is already in use`
+    
+    **Solution:**
+    - Stop any services using ports 54321-54324
+    - Or configure custom ports in `supabase/config.toml`
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Local Development" icon="laptop-code" href="./local-development">
+    Set up your local development environment
+  </Card>
+  
+  <Card title="CLI Reference" icon="book" href="/api-reference/cli">
+    Explore all CLI commands
+  </Card>
+  
+  <Card title="Migrations" icon="database" href="./migrations">
+    Learn database migration workflows
+  </Card>
+  
+  <Card title="GitHub Actions" icon="github" href="https://github.com/supabase/setup-cli">
+    Set up CI/CD with GitHub Actions
+  </Card>
+</CardGroup>

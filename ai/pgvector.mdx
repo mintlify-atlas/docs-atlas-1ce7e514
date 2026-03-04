@@ -1,0 +1,356 @@
+---
+title: 'pgvector Extension'
+description: 'Deep dive into the pgvector PostgreSQL extension for vector operations'
+---
+
+pgvector is a PostgreSQL extension that adds vector similarity search capabilities. Store vectors alongside your relational data and perform fast similarity queries with SQL.
+
+## Installation
+
+Enable the pgvector extension:
+
+```sql
+create extension vector;
+```
+
+## Vector Types
+
+Define vector columns with a specific dimension:
+
+```sql
+-- Create table with vector column
+create table items (
+  id bigserial primary key,
+  embedding vector(1536)  -- 1536 dimensions
+);
+
+-- Insert vector
+insert into items (embedding)
+values ('[0.1, 0.2, 0.3, ...]'::vector);
+
+-- Query vector
+select * from items where id = 1;
+```
+
+## Distance Operators
+
+pgvector provides three distance operators:
+
+<Tabs>
+  <Tab title="Cosine Distance (<=>)">
+    ```sql
+    -- Cosine distance (0 = identical, 2 = opposite)
+    select
+      id,
+      embedding <=> '[0.1, 0.2, 0.3]' as distance
+    from items
+    order by distance
+    limit 5;
+    ```
+  </Tab>
+  
+  <Tab title="L2 Distance (<->)">
+    ```sql
+    -- Euclidean distance
+    select
+      id,
+      embedding <-> '[0.1, 0.2, 0.3]' as distance
+    from items
+    order by distance
+    limit 5;
+    ```
+  </Tab>
+  
+  <Tab title="Inner Product (<#>)">
+    ```sql
+    -- Inner product (lower is more similar)
+    select
+      id,
+      embedding <#> '[0.1, 0.2, 0.3]' as distance
+    from items
+    order by distance
+    limit 5;
+    ```
+  </Tab>
+</Tabs>
+
+## Indexing
+
+### IVFFlat Index
+
+Fast to build, good for most use cases:
+
+```sql
+-- Create IVFFlat index
+create index on items 
+using ivfflat (embedding vector_cosine_ops)
+with (lists = 100);
+
+-- Choose lists based on row count:
+-- rows   | lists
+-- -------+-------
+-- 10K    | 30
+-- 100K   | 100  
+-- 1M     | 300
+-- 10M    | 1000
+```
+
+### HNSW Index
+
+Better recall, slower to build:
+
+```sql
+-- Create HNSW index
+create index on items 
+using hnsw (embedding vector_cosine_ops)
+with (m = 16, ef_construction = 64);
+
+-- Parameters:
+-- m: max connections per layer (higher = better recall, more memory)
+-- ef_construction: size of dynamic candidate list (higher = better index quality)
+```
+
+### Index for Different Distance Types
+
+```sql
+-- Cosine distance
+create index on items using ivfflat (embedding vector_cosine_ops);
+
+-- L2 distance  
+create index on items using ivfflat (embedding vector_l2_ops);
+
+-- Inner product
+create index on items using ivfflat (embedding vector_ip_ops);
+```
+
+## Functions
+
+### Vector Operations
+
+```sql
+-- Vector dimensions
+select vector_dims(embedding) from items limit 1;
+
+-- Vector norm (length)
+select vector_norm(embedding) from items limit 1;
+
+-- Add vectors
+select embedding + '[0.1, 0.2, 0.3]'::vector from items;
+
+-- Subtract vectors
+select embedding - '[0.1, 0.2, 0.3]'::vector from items;
+
+-- Multiply by scalar
+select embedding * 2 from items;
+```
+
+### Distance Functions
+
+```sql
+-- Cosine distance
+select cosine_distance(embedding, '[0.1, 0.2]') from items;
+
+-- L2 distance
+select l2_distance(embedding, '[0.1, 0.2]') from items;
+
+-- Inner product
+select inner_product(embedding, '[0.1, 0.2]') from items;
+```
+
+## Advanced Queries
+
+### Similarity Search with Threshold
+
+```sql
+select
+  id,
+  content,
+  1 - (embedding <=> query_embedding) as similarity
+from documents
+where 1 - (embedding <=> query_embedding) > 0.8
+order by embedding <=> query_embedding
+limit 10;
+```
+
+### Filtered Similarity Search
+
+```sql
+-- Search within category
+select *
+from documents
+where category = 'technical'
+order by embedding <=> query_embedding
+limit 10;
+
+-- Search with date range
+select *
+from documents
+where created_at > now() - interval '30 days'
+order by embedding <=> query_embedding
+limit 10;
+```
+
+### Approximate Nearest Neighbors
+
+```sql
+-- Set ef_search for HNSW index (higher = better recall, slower)
+set hnsw.ef_search = 100;
+
+-- Perform search
+select *
+from items
+order by embedding <=> query_embedding
+limit 10;
+```
+
+## Query Performance
+
+### Explain Plans
+
+```sql
+-- Check if index is used
+explain (analyze, buffers)
+select *
+from items
+order by embedding <=> query_embedding
+limit 10;
+
+-- Look for:
+-- "Index Scan using items_embedding_idx"
+```
+
+### Index Maintenance
+
+```sql
+-- Reindex if needed
+reindex index items_embedding_idx;
+
+-- Vacuum to reclaim space
+vacuum analyze items;
+```
+
+## Data Types and Limits
+
+```sql
+-- Maximum dimensions
+create table items (
+  embedding vector(16000)  -- Max 16,000 dimensions
+);
+
+-- Dimension must match
+insert into items (embedding)
+values ('[1,2,3]');  -- Error if column is vector(1536)
+```
+
+## Migration Patterns
+
+### Add Vector Column to Existing Table
+
+```sql
+-- Add column
+alter table articles
+add column embedding vector(1536);
+
+-- Backfill embeddings
+update articles
+set embedding = generate_embedding(content)
+where embedding is null;
+
+-- Create index
+create index on articles 
+using ivfflat (embedding vector_cosine_ops);
+```
+
+### Change Vector Dimensions
+
+```sql
+-- Can't alter dimension directly
+-- Create new column and migrate
+alter table items
+add column embedding_new vector(3072);
+
+update items
+set embedding_new = generate_new_embedding(content);
+
+-- Drop old, rename new
+alter table items drop column embedding;
+alter table items rename column embedding_new to embedding;
+```
+
+## Best Practices
+
+<Note>
+  **Normalize Vectors**: For cosine distance, normalize vectors to unit length for consistent results.
+</Note>
+
+```sql
+-- Normalize vectors
+create function normalize_vector(vec vector)
+returns vector as $$
+  select (vec / vector_norm(vec))::vector
+$$ language sql immutable;
+
+insert into items (embedding)
+values (normalize_vector('[1, 2, 3]'));
+```
+
+<Warning>
+  **Index Size**: Indexes can be large. Monitor disk usage and consider partitioning for large datasets.
+</Warning>
+
+<Tip>
+  **Bulk Operations**: Use `copy` or batch inserts for better performance when loading vectors.
+</Tip>
+
+## Troubleshooting
+
+<Accordion title="Index not being used">
+  ```sql
+  -- Increase work_mem for index creation
+  set work_mem = '1GB';
+  
+  -- Drop and recreate index
+  drop index items_embedding_idx;
+  create index on items using ivfflat (embedding vector_cosine_ops);
+  
+  -- Check statistics
+  analyze items;
+  ```
+</Accordion>
+
+<Accordion title="Slow queries">
+  - Use appropriate index type (IVFFlat vs HNSW)
+  - Adjust index parameters (lists, m, ef_construction)
+  - Add filters before similarity search
+  - Consider materialized views for common queries
+</Accordion>
+
+<Accordion title="Out of memory">
+  ```sql
+  -- Reduce probes for IVFFlat
+  set ivfflat.probes = 10;
+  
+  -- Reduce ef_search for HNSW  
+  set hnsw.ef_search = 40;
+  
+  -- Increase maintenance_work_mem for index builds
+  set maintenance_work_mem = '2GB';
+  ```
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Similarity Search" href="/ai/similarity-search">
+    Build semantic search with pgvector
+  </Card>
+  <Card title="Vector Embeddings" href="/ai/vector-embeddings">
+    Generate and store embeddings
+  </Card>
+  <Card title="Database Functions" href="/database/functions">
+    Create stored procedures with pgvector
+  </Card>
+  <Card title="AI Examples" href="/examples/ai">
+    Complete RAG application examples
+  </Card>
+</CardGroup>

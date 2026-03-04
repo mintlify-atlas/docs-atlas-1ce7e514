@@ -1,0 +1,638 @@
+---
+title: 'Kotlin SDK'
+description: 'Complete reference for the Supabase Kotlin client library'
+icon: 'k'
+---
+
+## Installation
+
+### Gradle (Kotlin DSL)
+
+Add the Supabase Kotlin dependency to your `build.gradle.kts`:
+
+```kotlin
+dependencies {
+    implementation("io.github.jan-tennert.supabase:postgrest-kt:2.0.0")
+    implementation("io.github.jan-tennert.supabase:realtime-kt:2.0.0")
+    implementation("io.github.jan-tennert.supabase:storage-kt:2.0.0")
+    implementation("io.github.jan-tennert.supabase:gotrue-kt:2.0.0")
+    implementation("io.github.jan-tennert.supabase:functions-kt:2.0.0")
+}
+```
+
+### Gradle (Groovy)
+
+```groovy
+dependencies {
+    implementation 'io.github.jan-tennert.supabase:postgrest-kt:2.0.0'
+    implementation 'io.github.jan-tennert.supabase:realtime-kt:2.0.0'
+    implementation 'io.github.jan-tennert.supabase:storage-kt:2.0.0'
+    implementation 'io.github.jan-tennert.supabase:gotrue-kt:2.0.0'
+    implementation 'io.github.jan-tennert.supabase:functions-kt:2.0.0'
+}
+```
+
+## Initializing
+
+Create a Supabase client to interact with your database.
+
+```kotlin
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.gotrue.Auth
+import io.github.jan.supabase.storage.Storage
+import io.github.jan.supabase.realtime.Realtime
+import io.github.jan.supabase.functions.Functions
+
+val supabase = createSupabaseClient(
+    supabaseUrl = "YOUR_SUPABASE_URL",
+    supabaseKey = "YOUR_SUPABASE_ANON_KEY"
+) {
+    install(Postgrest)
+    install(Auth)
+    install(Storage)
+    install(Realtime)
+    install(Functions)
+}
+```
+
+<ParamField path="supabaseUrl" type="String" required>
+  The unique Supabase URL for your project.
+</ParamField>
+
+<ParamField path="supabaseKey" type="String" required>
+  The Supabase anon key for your project.
+</ParamField>
+
+<ParamField path="configuration" type="SupabaseClientBuilder.() -> Unit">
+  Configuration block for installing plugins.
+  
+  <Expandable title="Available plugins">
+    <ParamField path="Postgrest">
+      Install the Postgrest plugin for database operations.
+    </ParamField>
+    
+    <ParamField path="Auth">
+      Install the Auth plugin for authentication.
+    </ParamField>
+    
+    <ParamField path="Storage">
+      Install the Storage plugin for file storage.
+    </ParamField>
+    
+    <ParamField path="Realtime">
+      Install the Realtime plugin for realtime subscriptions.
+    </ParamField>
+    
+    <ParamField path="Functions">
+      Install the Functions plugin for Edge Functions.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Database Operations
+
+### Select Data
+
+Query data from your tables.
+
+```kotlin
+import io.github.jan.supabase.postgrest.from
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class Country(
+    val id: Int,
+    val name: String,
+    val code: String,
+    val capital: String?
+)
+
+val countries = supabase.from("countries")
+    .select()
+    .decodeList<Country>()
+```
+
+<ResponseField name="result" type="List<T>">
+  The returned rows from the query, deserialized to your data class.
+</ResponseField>
+
+#### Select with Filters
+
+```kotlin
+val country = supabase.from("countries")
+    .select {
+        filter {
+            eq("id", 1)
+        }
+    }
+    .decodeSingle<Country>()
+```
+
+#### Select Specific Columns
+
+```kotlin
+val countries = supabase.from("countries")
+    .select(columns = Columns.list("name", "capital"))
+    .decodeList<Country>()
+```
+
+#### Common Filters
+
+```kotlin
+// Equal to
+val data = supabase.from("countries")
+    .select {
+        filter {
+            eq("name", "Albania")
+        }
+    }
+    .decodeList<Country>()
+
+// Not equal to
+val data = supabase.from("countries")
+    .select {
+        filter {
+            neq("name", "Albania")
+        }
+    }
+    .decodeList<Country>()
+
+// Greater than
+val data = supabase.from("countries")
+    .select {
+        filter {
+            gt("population", 1000000)
+        }
+    }
+    .decodeList<Country>()
+
+// Less than
+val data = supabase.from("countries")
+    .select {
+        filter {
+            lt("population", 1000000)
+        }
+    }
+    .decodeList<Country>()
+
+// Like (pattern matching)
+val data = supabase.from("countries")
+    .select {
+        filter {
+            ilike("name", "%Alba%")
+        }
+    }
+    .decodeList<Country>()
+
+// In list
+val data = supabase.from("countries")
+    .select {
+        filter {
+            isIn("name", listOf("Albania", "Algeria"))
+        }
+    }
+    .decodeList<Country>()
+```
+
+### Insert Data
+
+Insert rows into your tables.
+
+```kotlin
+@Serializable
+data class NewCountry(
+    val name: String,
+    val code: String
+)
+
+val newCountry = NewCountry(name = "Denmark", code = "DK")
+
+val result = supabase.from("countries")
+    .insert(newCountry) {
+        select()
+    }
+    .decodeSingle<Country>()
+```
+
+<ParamField path="value" type="T" required>
+  The value to insert.
+</ParamField>
+
+#### Insert Multiple Rows
+
+```kotlin
+val countries = listOf(
+    NewCountry(name = "Denmark", code = "DK"),
+    NewCountry(name = "Norway", code = "NO")
+)
+
+val result = supabase.from("countries")
+    .insert(countries) {
+        select()
+    }
+    .decodeList<Country>()
+```
+
+### Update Data
+
+Update existing rows in your tables.
+
+```kotlin
+@Serializable
+data class CountryUpdate(
+    val name: String
+)
+
+val update = CountryUpdate(name = "Australia")
+
+val result = supabase.from("countries")
+    .update(update) {
+        filter {
+            eq("id", 1)
+        }
+        select()
+    }
+    .decodeList<Country>()
+```
+
+<ParamField path="value" type="T" required>
+  The values to update.
+</ParamField>
+
+### Upsert Data
+
+Insert or update rows based on unique constraints.
+
+```kotlin
+val country = Country(
+    id = 1,
+    name = "Australia",
+    code = "AU",
+    capital = "Canberra"
+)
+
+val result = supabase.from("countries")
+    .upsert(country) {
+        select()
+    }
+    .decodeSingle<Country>()
+```
+
+### Delete Data
+
+Delete rows from your tables.
+
+```kotlin
+supabase.from("countries")
+    .delete {
+        filter {
+            eq("id", 1)
+        }
+    }
+```
+
+## Authentication
+
+### Sign Up
+
+Create a new user account.
+
+```kotlin
+import io.github.jan.supabase.gotrue.auth
+import io.github.jan.supabase.gotrue.providers.builtin.Email
+
+val result = supabase.auth.signUpWith(Email) {
+    email = "example@email.com"
+    password = "example-password"
+}
+```
+
+<ParamField path="email" type="String" required>
+  The user's email address.
+</ParamField>
+
+<ParamField path="password" type="String" required>
+  The user's password.
+</ParamField>
+
+<ParamField path="data" type="JsonObject">
+  Additional user metadata.
+</ParamField>
+
+<ParamField path="redirectUrl" type="String">
+  A URL to redirect to after signup.
+</ParamField>
+
+<ResponseField name="result" type="AuthResponse">
+  <Expandable title="result properties">
+    <ResponseField name="user" type="UserInfo?">
+      The user object.
+    </ResponseField>
+    
+    <ResponseField name="session" type="SessionInfo?">
+      The session object.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Sign In
+
+Sign in an existing user.
+
+```kotlin
+val result = supabase.auth.signInWith(Email) {
+    email = "example@email.com"
+    password = "example-password"
+}
+```
+
+### Sign Out
+
+Sign out the current user.
+
+```kotlin
+supabase.auth.signOut()
+```
+
+### Get Session
+
+Get the current session.
+
+```kotlin
+val session = supabase.auth.currentSessionOrNull()
+```
+
+<ResponseField name="session" type="SessionInfo?">
+  The current session object or null if no active session.
+</ResponseField>
+
+### Get User
+
+Get the current user.
+
+```kotlin
+val user = supabase.auth.currentUserOrNull()
+```
+
+<ResponseField name="user" type="UserInfo?">
+  The current user object or null if not authenticated.
+</ResponseField>
+
+### Auth State Changes
+
+Listen to authentication state changes.
+
+```kotlin
+import io.github.jan.supabase.gotrue.SessionStatus
+
+supabase.auth.sessionStatus.collect { status ->
+    when (status) {
+        is SessionStatus.Authenticated -> {
+            println("User signed in: ${status.session.user?.email}")
+        }
+        is SessionStatus.NotAuthenticated -> {
+            println("User signed out")
+        }
+        else -> {}
+    }
+}
+```
+
+## Storage
+
+### Upload File
+
+Upload a file to a storage bucket.
+
+```kotlin
+import io.github.jan.supabase.storage.storage
+import io.github.jan.supabase.storage.upload
+
+val fileData = File("path/to/file").readBytes()
+
+val result = supabase.storage
+    .from("avatars")
+    .upload("public/avatar1.png", fileData) {
+        contentType = "image/png"
+    }
+```
+
+<ParamField path="path" type="String" required>
+  The file path including the file name.
+</ParamField>
+
+<ParamField path="data" type="ByteArray" required>
+  The file data to upload.
+</ParamField>
+
+<ParamField path="upsert" type="Boolean" default="false">
+  When true, overwrites existing file with the same path.
+</ParamField>
+
+<ParamField path="contentType" type="String">
+  MIME type of the file.
+</ParamField>
+
+### Download File
+
+Download a file from storage.
+
+```kotlin
+import io.github.jan.supabase.storage.download
+
+val data = supabase.storage
+    .from("avatars")
+    .download("public/avatar1.png")
+```
+
+<ParamField path="path" type="String" required>
+  The file path to download.
+</ParamField>
+
+<ResponseField name="data" type="ByteArray">
+  The file data.
+</ResponseField>
+
+### List Files
+
+List all files in a bucket.
+
+```kotlin
+val files = supabase.storage
+    .from("avatars")
+    .list("public")
+```
+
+### Delete Files
+
+Delete files from storage.
+
+```kotlin
+supabase.storage
+    .from("avatars")
+    .delete(listOf("public/avatar1.png", "public/avatar2.png"))
+```
+
+### Get Public URL
+
+Get the public URL for a file.
+
+```kotlin
+import io.github.jan.supabase.storage.publicUrl
+
+val url = supabase.storage
+    .from("avatars")
+    .publicUrl("public/avatar1.png")
+
+println(url)
+```
+
+## Realtime
+
+### Subscribe to Changes
+
+Listen to database changes in realtime.
+
+```kotlin
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.PostgresAction
+
+val channel = supabase.channel("db-changes")
+
+val changeFlow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
+    table = "countries"
+}
+
+changeFlow.collect { action ->
+    when (action) {
+        is PostgresAction.Insert -> println("New country: ${action.record}")
+        is PostgresAction.Update -> println("Updated country: ${action.record}")
+        is PostgresAction.Delete -> println("Deleted country")
+    }
+}
+
+channel.subscribe()
+```
+
+<ParamField path="schema" type="String" required>
+  The database schema to listen to.
+</ParamField>
+
+<ParamField path="table" type="String" required>
+  The table to listen to.
+</ParamField>
+
+### Unsubscribe
+
+Stop listening to changes.
+
+```kotlin
+supabase.removeChannel(channel)
+```
+
+## Edge Functions
+
+### Invoke Function
+
+Invoke a Supabase Edge Function.
+
+```kotlin
+import io.github.jan.supabase.functions.functions
+import io.github.jan.supabase.functions.invoke
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class FunctionPayload(val name: String)
+
+@Serializable
+data class FunctionResponse(val message: String)
+
+val response = supabase.functions.invoke<FunctionResponse>(
+    function = "hello-world",
+    body = FunctionPayload(name = "Functions")
+)
+```
+
+<ParamField path="function" type="String" required>
+  The name of the Edge Function to invoke.
+</ParamField>
+
+<ParamField path="body" type="T">
+  The request body to send to the function.
+</ParamField>
+
+<ParamField path="headers" type="Map<String, String>">
+  Custom headers to send with the request.
+</ParamField>
+
+<ParamField path="method" type="HttpMethod" default="HttpMethod.Post">
+  HTTP method to use.
+</ParamField>
+
+<ResponseField name="response" type="T">
+  The response data from the function, deserialized to your data class.
+</ResponseField>
+
+## Error Handling
+
+Handle errors using try-catch blocks:
+
+```kotlin
+try {
+    val countries = supabase.from("countries")
+        .select()
+        .decodeList<Country>()
+    println("Countries: $countries")
+} catch (e: RestException) {
+    println("Database error: ${e.message}")
+} catch (e: Exception) {
+    println("Unexpected error: ${e.message}")
+}
+```
+
+## Compose Multiplatform Integration
+
+Use Supabase with Compose Multiplatform:
+
+```kotlin
+import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
+
+@Composable
+fun CountriesScreen() {
+    var countries by remember { mutableStateOf<List<Country>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+    
+    LaunchedEffect(Unit) {
+        scope.launch {
+            try {
+                countries = supabase.from("countries")
+                    .select()
+                    .decodeList<Country>()
+            } catch (e: Exception) {
+                println("Error loading countries: ${e.message}")
+            }
+        }
+    }
+    
+    LazyColumn {
+        items(countries) { country ->
+            Text(country.name)
+        }
+    }
+}
+```
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/supabase-community/supabase-kt">
+    View the source code and contribute
+  </Card>
+  
+  <Card title="Maven Central" icon="k" href="https://search.maven.org/search?q=g:io.github.jan-tennert.supabase">
+    View package details and versions
+  </Card>
+</CardGroup>

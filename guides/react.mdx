@@ -1,0 +1,650 @@
+---
+title: 'React Integration Guide'
+description: 'Build single-page applications with React and Supabase'
+icon: 'react'
+---
+
+Learn how to integrate Supabase with React to build modern single-page applications with authentication, real-time data, and file storage.
+
+## Why React + Supabase?
+
+- **Hooks-based** API for clean, reusable code
+- **Real-time** subscriptions for live updates
+- **Type-safe** with TypeScript
+- **Zero backend** configuration needed
+- **Fast development** with minimal boilerplate
+
+## Quick Start
+
+<Steps>
+
+<Step title="Create a React App">
+
+Using Vite (recommended):
+
+```bash
+npm create vite@latest my-app -- --template react-ts
+cd my-app
+npm install
+```
+
+Or using Create React App:
+
+```bash
+npx create-react-app my-app --template typescript
+cd my-app
+```
+
+</Step>
+
+<Step title="Install Supabase">
+
+```bash
+npm install @supabase/supabase-js
+```
+
+</Step>
+
+<Step title="Set Up Environment Variables">
+
+Create `.env` (Vite) or `.env.local` (CRA):
+
+```bash
+VITE_SUPABASE_URL=your-project-url
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+<Note>
+For Create React App, use `REACT_APP_` prefix instead of `VITE_`.
+</Note>
+
+</Step>
+
+<Step title="Create Supabase Client">
+
+Create `src/lib/supabase.ts`:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+```
+
+</Step>
+
+</Steps>
+
+## Authentication
+
+### Auth Context
+
+Create an auth context to manage user state:
+
+```typescript
+// src/contexts/AuthContext.tsx
+import { createContext, useContext, useEffect, useState } from 'react'
+import { User, Session } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase'
+
+interface AuthContextType {
+  user: User | null
+  session: Session | null
+  signIn: (email: string, password: string) => Promise<void>
+  signUp: (email: string, password: string) => Promise<void>
+  signOut: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) throw error
+  }
+
+  const signUp = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({ email, password })
+    if (error) throw error
+  }
+
+  const signOut = async () => {
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, session, signIn, signUp, signOut }}>
+      {!loading && children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider')
+  }
+  return context
+}
+```
+
+### Login Component
+
+Create a login form:
+
+```typescript
+// src/components/Auth.tsx
+import { useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
+
+export default function Auth() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const { signIn, signUp } = useAuth()
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      setLoading(true)
+      await signIn(email, password)
+    } catch (error: any) {
+      alert(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      setLoading(true)
+      await signUp(email, password)
+      alert('Check your email for the confirmation link!')
+    } catch (error: any) {
+      alert(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="max-w-md mx-auto mt-8 p-6 bg-white rounded-lg shadow">
+      <h1 className="text-2xl font-bold mb-6">Welcome</h1>
+      <form className="space-y-4">
+        <div>
+          <label htmlFor="email" className="block text-sm font-medium mb-1">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg"
+            required
+          />
+        </div>
+        <div>
+          <label htmlFor="password" className="block text-sm font-medium mb-1">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg"
+            required
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleSignIn}
+            disabled={loading}
+            className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg disabled:opacity-50"
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={handleSignUp}
+            disabled={loading}
+            className="flex-1 px-4 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
+          >
+            Sign Up
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+```
+
+## Database Operations
+
+### Fetching Data
+
+Use hooks to fetch data:
+
+```typescript
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
+
+interface Post {
+  id: string
+  title: string
+  content: string
+  created_at: string
+}
+
+export default function Posts() {
+  const [posts, setPosts] = useState<Post[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchPosts()
+  }, [])
+
+  const fetchPosts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setPosts(data || [])
+    } catch (error: any) {
+      alert(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) return <div>Loading...</div>
+
+  return (
+    <div className="space-y-4">
+      {posts.map((post) => (
+        <div key={post.id} className="p-4 border rounded">
+          <h2 className="text-xl font-bold">{post.title}</h2>
+          <p>{post.content}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Custom Hook for Data Fetching
+
+Create a reusable hook:
+
+```typescript
+// src/hooks/useSupabaseQuery.ts
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
+import { PostgrestError } from '@supabase/supabase-js'
+
+export function useSupabaseQuery<T>(
+  table: string,
+  columns = '*',
+  filters?: any
+) {
+  const [data, setData] = useState<T[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<PostgrestError | null>(null)
+
+  useEffect(() => {
+    fetchData()
+  }, [table, columns, JSON.stringify(filters)])
+
+  const fetchData = async () => {
+    try {
+      setLoading(true)
+      let query = supabase.from(table).select(columns)
+
+      if (filters) {
+        Object.entries(filters).forEach(([key, value]) => {
+          query = query.eq(key, value)
+        })
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+      setData(data || [])
+    } catch (error: any) {
+      setError(error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return { data, loading, error, refetch: fetchData }
+}
+
+// Usage
+function MyComponent() {
+  const { data: posts, loading } = useSupabaseQuery('posts')
+  
+  if (loading) return <div>Loading...</div>
+  
+  return (
+    <div>
+      {posts.map((post: any) => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Inserting Data
+
+Create and insert records:
+
+```typescript
+import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
+
+export default function CreatePost() {
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      setLoading(true)
+      const { error } = await supabase
+        .from('posts')
+        .insert({ title, content })
+
+      if (error) throw error
+      
+      alert('Post created!')
+      setTitle('')
+      setContent('')
+    } catch (error: any) {
+      alert(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <input
+        type="text"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Title"
+        className="w-full px-3 py-2 border rounded"
+        required
+      />
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="Content"
+        className="w-full px-3 py-2 border rounded"
+        rows={4}
+        required
+      />
+      <button
+        type="submit"
+        disabled={loading}
+        className="px-4 py-2 bg-blue-500 text-white rounded"
+      >
+        {loading ? 'Creating...' : 'Create Post'}
+      </button>
+    </form>
+  )
+}
+```
+
+## Real-time Subscriptions
+
+Subscribe to database changes:
+
+```typescript
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
+
+export default function RealtimePosts() {
+  const [posts, setPosts] = useState<any[]>([])
+
+  useEffect(() => {
+    // Fetch initial data
+    fetchPosts()
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('posts')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'posts' },
+        (payload) => {
+          setPosts((current) => [payload.new, ...current])
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'posts' },
+        (payload) => {
+          setPosts((current) => current.filter((post) => post.id !== payload.old.id))
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'posts' },
+        (payload) => {
+          setPosts((current) =>
+            current.map((post) => (post.id === payload.new.id ? payload.new : post))
+          )
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  const fetchPosts = async () => {
+    const { data } = await supabase
+      .from('posts')
+      .select('*')
+      .order('created_at', { ascending: false })
+    setPosts(data || [])
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-bold">Posts (Real-time)</h2>
+      {posts.map((post) => (
+        <div key={post.id} className="p-4 border rounded">
+          <h3 className="font-bold">{post.title}</h3>
+          <p>{post.content}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+## File Upload
+
+Upload files to Supabase Storage:
+
+```typescript
+import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
+
+export default function FileUpload() {
+  const [uploading, setUploading] = useState(false)
+  const [url, setUrl] = useState<string | null>(null)
+
+  const uploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true)
+
+      if (!event.target.files || event.target.files.length === 0) {
+        throw new Error('You must select a file to upload.')
+      }
+
+      const file = event.target.files[0]
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Math.random()}.${fileExt}`
+      const filePath = `uploads/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('files')
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      // Get public URL
+      const { data } = supabase.storage.from('files').getPublicUrl(filePath)
+      setUrl(data.publicUrl)
+    } catch (error: any) {
+      alert(error.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <input
+        type="file"
+        onChange={uploadFile}
+        disabled={uploading}
+        className="block w-full"
+      />
+      {uploading && <p>Uploading...</p>}
+      {url && (
+        <div>
+          <p>File uploaded successfully!</p>
+          <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-500">
+            View file
+          </a>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+## App Structure
+
+Put it all together:
+
+```typescript
+// src/App.tsx
+import { AuthProvider, useAuth } from '@/contexts/AuthContext'
+import Auth from '@/components/Auth'
+import Dashboard from '@/components/Dashboard'
+
+function AppContent() {
+  const { user, signOut } = useAuth()
+
+  if (!user) {
+    return <Auth />
+  }
+
+  return (
+    <div>
+      <nav className="bg-white shadow px-4 py-3 flex justify-between items-center">
+        <h1 className="text-xl font-bold">My App</h1>
+        <button
+          onClick={signOut}
+          className="px-4 py-2 bg-red-500 text-white rounded"
+        >
+          Sign Out
+        </button>
+      </nav>
+      <main className="container mx-auto p-4">
+        <Dashboard />
+      </main>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  )
+}
+
+export default App
+```
+
+## Best Practices
+
+<Card title="Use Context for Auth" icon="user">
+  Manage authentication state globally with React Context.
+</Card>
+
+<Card title="Custom Hooks" icon="code">
+  Create reusable hooks for common Supabase operations.
+</Card>
+
+<Card title="Error Handling" icon="exclamation-triangle">
+  Always handle errors and provide user feedback.
+</Card>
+
+<Card title="Loading States" icon="spinner">
+  Show loading indicators during async operations.
+</Card>
+
+<Card title="Cleanup Subscriptions" icon="broom">
+  Unsubscribe from real-time channels when components unmount.
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build a Todo App" icon="list-check" href="/guides/building-a-todo-app">
+    Complete tutorial with authentication
+  </Card>
+  <Card title="User Management" icon="users" href="/guides/user-management">
+    Add profile management
+  </Card>
+  <Card title="File Uploads" icon="upload" href="/guides/file-uploads">
+    Handle file storage
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/overview">
+    Explore more examples
+  </Card>
+</CardGroup>

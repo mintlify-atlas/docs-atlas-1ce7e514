@@ -1,0 +1,510 @@
+---
+title: 'Edge Functions'
+description: 'Deploy and invoke serverless functions at the edge'
+icon: 'bolt'
+---
+
+## Overview
+
+Supabase Edge Functions are server-side TypeScript functions that run on Deno, distributed globally at the edge. They're perfect for running custom business logic, integrations with third-party services, or any server-side code.
+
+## Base URL
+
+Edge Functions are available at:
+
+```
+https://<PROJECT_REF>.supabase.co/functions/v1/
+```
+
+## Invoking Functions
+
+### Basic Invocation
+
+Invoke a function with a POST request.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/functions/v1/hello-world' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Functions"}'
+```
+
+<ParamField path="function_name" type="string" required>
+  The name of the function to invoke (in the URL path).
+</ParamField>
+
+<ParamField header="apikey" type="string" required>
+  Your Supabase API key.
+</ParamField>
+
+<ParamField header="Authorization" type="string">
+  Bearer token for authenticated requests (optional for public functions).
+</ParamField>
+
+<ParamField header="Content-Type" type="string">
+  Set to `application/json` for JSON payloads.
+</ParamField>
+
+#### Response
+
+```json
+{
+  "message": "Hello Functions!"
+}
+```
+
+### GET Request
+
+Invoke a function with a GET request.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/functions/v1/hello-world?name=Functions' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+### Custom Headers
+
+Pass custom headers to your function.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/functions/v1/webhook-handler' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "X-Custom-Header: custom-value" \
+  -H "Content-Type: application/json" \
+  -d '{"event": "user.created"}'
+```
+
+## Function Examples
+
+### Basic Function
+
+A simple Edge Function that returns a greeting.
+
+```typescript
+// supabase/functions/hello-world/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+
+serve(async (req) => {
+  const { name } = await req.json()
+  
+  const data = {
+    message: `Hello ${name}!`,
+  }
+
+  return new Response(
+    JSON.stringify(data),
+    { headers: { 'Content-Type': 'application/json' } },
+  )
+})
+```
+
+### Database Access
+
+Access your Supabase database from an Edge Function.
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async (req) => {
+  const supabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    {
+      global: {
+        headers: { Authorization: req.headers.get('Authorization')! },
+      },
+    }
+  )
+
+  const { data, error } = await supabaseClient
+    .from('countries')
+    .select('*')
+    .limit(10)
+
+  if (error) {
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
+  return new Response(
+    JSON.stringify(data),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+### OpenAI Integration
+
+Integrate with third-party APIs like OpenAI.
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { Configuration, OpenAIApi } from 'https://esm.sh/openai@3.1.0'
+
+serve(async (req) => {
+  const { prompt } = await req.json()
+
+  const configuration = new Configuration({
+    apiKey: Deno.env.get('OPENAI_API_KEY'),
+  })
+  const openai = new OpenAIApi(configuration)
+
+  const completion = await openai.createChatCompletion({
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  return new Response(
+    JSON.stringify({
+      response: completion.data.choices[0].message?.content,
+    }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+### Webhook Handler
+
+Handle webhooks from third-party services.
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async (req) => {
+  // Verify webhook signature
+  const signature = req.headers.get('x-webhook-signature')
+  if (!verifySignature(signature, await req.text())) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+
+  const payload = await req.json()
+  const supabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  )
+
+  // Process webhook
+  await supabaseClient
+    .from('webhook_events')
+    .insert({
+      event_type: payload.type,
+      data: payload.data,
+    })
+
+  return new Response('OK', { status: 200 })
+})
+
+function verifySignature(signature: string | null, body: string): boolean {
+  // Implement signature verification logic
+  return true
+}
+```
+
+## Environment Variables
+
+Access environment variables in your functions.
+
+```typescript
+const supabaseUrl = Deno.env.get('SUPABASE_URL')
+const apiKey = Deno.env.get('SUPABASE_ANON_KEY')
+const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+const customVar = Deno.env.get('MY_CUSTOM_VAR')
+```
+
+### Built-in Environment Variables
+
+<ParamField path="SUPABASE_URL" type="string">
+  Your Supabase project URL.
+</ParamField>
+
+<ParamField path="SUPABASE_ANON_KEY" type="string">
+  Your Supabase anon key.
+</ParamField>
+
+<ParamField path="SUPABASE_SERVICE_ROLE_KEY" type="string">
+  Your Supabase service role key (use with caution).
+</ParamField>
+
+<ParamField path="SUPABASE_DB_URL" type="string">
+  Direct connection string to your Postgres database.
+</ParamField>
+
+## Request and Response
+
+### Request Object
+
+Access request properties.
+
+```typescript
+serve(async (req) => {
+  // HTTP method
+  const method = req.method // GET, POST, etc.
+
+  // Headers
+  const contentType = req.headers.get('Content-Type')
+  const auth = req.headers.get('Authorization')
+
+  // URL and query params
+  const url = new URL(req.url)
+  const name = url.searchParams.get('name')
+
+  // Body
+  const body = await req.json() // For JSON
+  const text = await req.text() // For text
+  const formData = await req.formData() // For forms
+
+  return new Response('OK')
+})
+```
+
+### Response Object
+
+Return different types of responses.
+
+```typescript
+// JSON response
+return new Response(
+  JSON.stringify({ message: 'Success' }),
+  {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+    },
+  }
+)
+
+// Plain text
+return new Response('Hello World', {
+  headers: { 'Content-Type': 'text/plain' },
+})
+
+// HTML
+return new Response('<h1>Hello World</h1>', {
+  headers: { 'Content-Type': 'text/html' },
+})
+
+// Redirect
+return new Response(null, {
+  status: 302,
+  headers: { Location: 'https://example.com' },
+})
+
+// Error
+return new Response(
+  JSON.stringify({ error: 'Not found' }),
+  {
+    status: 404,
+    headers: { 'Content-Type': 'application/json' },
+  }
+)
+```
+
+## CORS
+
+Handle CORS for browser requests.
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { corsHeaders } from '../_shared/cors.ts'
+
+serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  // Your function logic
+  const data = { message: 'Hello from CORS-enabled function' }
+
+  return new Response(
+    JSON.stringify(data),
+    {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    }
+  )
+})
+```
+
+### CORS Headers
+
+```typescript
+// _shared/cors.ts
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+```
+
+## Authentication
+
+### Verify JWT
+
+Verify the user's JWT token.
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async (req) => {
+  const supabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    {
+      global: {
+        headers: { Authorization: req.headers.get('Authorization')! },
+      },
+    }
+  )
+
+  // Get the current user
+  const {
+    data: { user },
+    error,
+  } = await supabaseClient.auth.getUser()
+
+  if (error || !user) {
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
+  return new Response(
+    JSON.stringify({ userId: user.id, email: user.email }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+## Deployment
+
+### Deploy via CLI
+
+```bash
+# Deploy a single function
+supabase functions deploy hello-world
+
+# Deploy all functions
+supabase functions deploy
+
+# Deploy with environment variables
+supabase secrets set MY_SECRET=value
+supabase functions deploy hello-world
+```
+
+### Deploy via GitHub Actions
+
+```yaml
+name: Deploy Functions
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      
+      - name: Deploy functions
+        run: supabase functions deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.PROJECT_REF }}
+```
+
+## Limits and Pricing
+
+### Free Tier
+
+- 500,000 invocations per month
+- 1GB bandwidth per month
+- 100 concurrent executions
+
+### Pro Tier
+
+- 2,000,000 invocations per month
+- 5GB bandwidth per month
+- 500 concurrent executions
+
+### Execution Limits
+
+- **Timeout**: 60 seconds per invocation
+- **Memory**: 150MB RAM
+- **CPU**: Limited based on plan
+- **Cold start**: ~1-3 seconds
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep functions focused">
+    Each function should do one thing well. Create multiple functions for different use cases.
+  </Accordion>
+  
+  <Accordion title="Use environment variables for secrets">
+    Never hardcode API keys or secrets in your functions:
+    
+    ```bash
+    supabase secrets set OPENAI_API_KEY=sk-...
+    ```
+  </Accordion>
+  
+  <Accordion title="Implement error handling">
+    Always handle errors gracefully:
+    
+    ```typescript
+    try {
+      // Your logic
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ error: error.message }),
+        { status: 500 }
+      )
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Use TypeScript">
+    TypeScript provides better developer experience and catches errors early.
+  </Accordion>
+  
+  <Accordion title="Cache responses when possible">
+    Use appropriate cache headers to reduce function invocations:
+    
+    ```typescript
+    headers: { 'Cache-Control': 'public, max-age=3600' }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Monitoring
+
+View function logs and metrics in the Supabase Dashboard:
+
+- **Logs**: Real-time function execution logs
+- **Metrics**: Invocation count, error rate, execution time
+- **Traces**: Request/response details
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy Your First Function" icon="rocket" href="/docs/guides/functions">
+    Learn how to create and deploy Edge Functions
+  </Card>
+  
+  <Card title="Client Libraries" icon="code" href="/api/javascript">
+    Invoke functions from your app
+  </Card>
+</CardGroup>

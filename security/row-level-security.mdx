@@ -1,0 +1,623 @@
+---
+title: 'Row Level Security (RLS)'
+description: 'Secure your data with PostgreSQL Row Level Security policies'
+---
+
+Row Level Security (RLS) is PostgreSQL's most powerful security feature, providing granular control over which rows users can access in your database. When properly configured, RLS ensures users can only see and modify data they're authorized to access.
+
+## What is Row Level Security?
+
+RLS is a PostgreSQL feature that adds an implicit `WHERE` clause to every query based on policies you define. This means security is enforced at the database level, protecting your data even if accessed through third-party tools.
+
+<Info>
+RLS works with Supabase Auth to provide end-to-end security from the browser to the database.
+</Info>
+
+## Why RLS is Critical
+
+<Danger>
+**Tables in the `public` schema without RLS enabled are accessible to anyone with your anon key.**
+
+Supabase allows browser access to your database for convenience, but this requires RLS to be secure.
+</Danger>
+
+RLS provides:
+
+- **Defense in depth**: Protection even if application code has vulnerabilities
+- **Automatic enforcement**: No way to bypass security from client code
+- **Granular control**: Different rules for SELECT, INSERT, UPDATE, DELETE
+- **Third-party protection**: Security maintained when using external tools
+
+## Enabling RLS
+
+### Enable on Individual Tables
+
+```sql
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+```
+
+<Warning>
+Once RLS is enabled, **no data is accessible** via the API until you create policies.
+</Warning>
+
+### Auto-Enable RLS on New Tables
+
+Create an event trigger to automatically enable RLS:
+
+```sql
+CREATE OR REPLACE FUNCTION rls_auto_enable()
+RETURNS EVENT_TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $$
+DECLARE
+  cmd record;
+BEGIN
+  FOR cmd IN
+    SELECT *
+    FROM pg_event_trigger_ddl_commands()
+    WHERE command_tag IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+      AND object_type IN ('table','partitioned table')
+  LOOP
+    IF cmd.schema_name = 'public' THEN
+      BEGIN
+        EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', cmd.object_identity);
+        RAISE LOG 'Auto-enabled RLS on %', cmd.object_identity;
+      EXCEPTION
+        WHEN OTHERS THEN
+          RAISE LOG 'Failed to enable RLS on %', cmd.object_identity;
+      END;
+    END IF;
+  END LOOP;
+END;
+$$;
+
+CREATE EVENT TRIGGER ensure_rls
+  ON ddl_command_end
+  WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+  EXECUTE FUNCTION rls_auto_enable();
+```
+
+<Note>
+This trigger only affects tables created after installation. Enable RLS manually on existing tables.
+</Note>
+
+## Creating Policies
+
+Policies define the rules for accessing rows. Each policy has:
+
+- **Table**: Which table it applies to
+- **Operation**: SELECT, INSERT, UPDATE, or DELETE
+- **Role**: Which database role (anon, authenticated)
+- **Condition**: SQL expression that must be true
+
+### SELECT Policies
+
+Control which rows users can view:
+
+```sql
+-- Everyone can view published posts
+CREATE POLICY "Public posts are viewable"
+  ON posts
+  FOR SELECT
+  TO anon
+  USING (published = true);
+
+-- Users can view their own posts
+CREATE POLICY "Users can view own posts"
+  ON posts
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() = user_id);
+```
+
+### INSERT Policies
+
+Control which rows users can create:
+
+```sql
+-- Users can create posts for themselves
+CREATE POLICY "Users can create posts"
+  ON posts
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = user_id);
+```
+
+<Info>
+`WITH CHECK` ensures the new row data meets policy requirements.
+</Info>
+
+### UPDATE Policies
+
+Control which rows users can modify:
+
+```sql
+-- Users can update their own posts
+CREATE POLICY "Users can update own posts"
+  ON posts
+  FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = user_id)        -- Must own the row
+  WITH CHECK (auth.uid() = user_id);  -- Can't change ownership
+```
+
+<Warning>
+UPDATE operations require a matching SELECT policy to work properly.
+</Warning>
+
+### DELETE Policies
+
+Control which rows users can delete:
+
+```sql
+-- Users can delete their own posts
+CREATE POLICY "Users can delete own posts"
+  ON posts
+  FOR DELETE
+  TO authenticated
+  USING (auth.uid() = user_id);
+```
+
+## Common Policy Patterns
+
+### User-Owned Data
+
+```sql
+-- Table schema
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users NOT NULL,
+  username TEXT,
+  avatar_url TEXT
+);
+
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- Everyone can view profiles
+CREATE POLICY "Profiles are publicly viewable"
+  ON profiles FOR SELECT
+  TO anon, authenticated
+  USING (true);
+
+-- Users can update their own profile
+CREATE POLICY "Users can update own profile"
+  ON profiles FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+```
+
+### Team-Based Access
+
+```sql
+-- Users can access data from their team
+CREATE POLICY "Team members can view team data"
+  ON documents
+  FOR SELECT
+  TO authenticated
+  USING (
+    team_id IN (
+      SELECT team_id 
+      FROM team_members 
+      WHERE user_id = auth.uid()
+    )
+  );
+```
+
+### Role-Based Access
+
+```sql
+-- Store roles in app_metadata
+CREATE POLICY "Admins can view all data"
+  ON sensitive_data
+  FOR SELECT
+  TO authenticated
+  USING (
+    (auth.jwt() ->> 'app_metadata')::jsonb ->> 'role' = 'admin'
+  );
+```
+
+<Caution>
+`app_metadata` is secure (user can't modify), but `user_metadata` is NOT secure (user can modify).
+</Caution>
+
+### Multi-Factor Authentication Required
+
+```sql
+-- Require MFA for sensitive operations
+CREATE POLICY "MFA required for updates"
+  ON sensitive_table
+  AS RESTRICTIVE
+  FOR UPDATE
+  TO authenticated
+  USING (
+    (auth.jwt() ->> 'aal') = 'aal2'
+  );
+```
+
+## Helper Functions
+
+### `auth.uid()`
+
+Returns the ID of the authenticated user:
+
+```sql
+CREATE POLICY "Users see own data"
+  ON user_data
+  FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid());
+```
+
+<Warning>
+`auth.uid()` returns `NULL` for unauthenticated users, which causes policies to silently fail. Always check for NULL:
+
+```sql
+USING (auth.uid() IS NOT NULL AND auth.uid() = user_id)
+```
+</Warning>
+
+### `auth.jwt()`
+
+Accesses JWT claims:
+
+```sql
+-- Check user role from app_metadata
+CREATE POLICY "Admin access"
+  ON admin_panel
+  FOR ALL
+  TO authenticated
+  USING (
+    (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+  );
+
+-- Check team membership
+CREATE POLICY "Team access"
+  ON team_data
+  FOR SELECT
+  TO authenticated
+  USING (
+    team_id = ANY(
+      SELECT jsonb_array_elements_text(
+        (auth.jwt() -> 'app_metadata' -> 'teams')::jsonb
+      )::uuid
+    )
+  );
+```
+
+<Caution>
+JWT tokens are not always fresh. If you update `app_metadata`, changes won't reflect in `auth.jwt()` until the token refreshes.
+</Caution>
+
+## Performance Optimization
+
+RLS policies can impact query performance. Follow these practices:
+
+### 1. Add Indexes
+
+Index columns used in policies:
+
+```sql
+-- Policy uses user_id
+CREATE POLICY "User data" ON posts
+  USING (user_id = auth.uid());
+
+-- Add index on user_id
+CREATE INDEX idx_posts_user_id ON posts(user_id);
+```
+
+**Impact**: 99.94% faster queries
+
+### 2. Wrap Functions with SELECT
+
+Improve function performance:
+
+```sql
+-- Before: Slow
+CREATE POLICY "User access"
+  USING (auth.uid() = user_id);
+
+-- After: Fast  
+CREATE POLICY "User access"
+  USING ((SELECT auth.uid()) = user_id);
+```
+
+**Impact**: 95% faster queries
+
+<Info>
+Wrapping with `SELECT` causes PostgreSQL to cache the function result per statement instead of calling it for each row.
+</Info>
+
+### 3. Add Filters to Queries
+
+Even with policies, always filter in your queries:
+
+```javascript
+// Don't do this
+const { data } = await supabase
+  .from('posts')
+  .select('*')
+
+// Do this instead
+const { data } = await supabase
+  .from('posts')
+  .select('*')
+  .eq('user_id', userId)
+```
+
+**Impact**: 95% faster queries
+
+### 4. Use Security Definer Functions
+
+Bypass RLS for complex joins:
+
+```sql
+-- Create function that runs as creator (bypasses RLS)
+CREATE FUNCTION private.get_user_teams()
+RETURNS TABLE(team_id UUID)
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT team_id 
+  FROM team_members 
+  WHERE user_id = auth.uid()
+$$;
+
+-- Use in policy
+CREATE POLICY "Team access"
+  ON documents
+  USING (
+    team_id IN (SELECT private.get_user_teams())
+  );
+```
+
+<Danger>
+Never put security definer functions in schemas exposed via PostgREST (like `public`). Use a private schema.
+</Danger>
+
+### 5. Minimize Joins
+
+Rewrite policies to avoid table joins:
+
+```sql
+-- Before: Slow (joins tables)
+CREATE POLICY "Team access"
+  USING (
+    auth.uid() IN (
+      SELECT user_id FROM team_members
+      WHERE team_members.team_id = documents.team_id
+    )
+  );
+
+-- After: Fast (no join)
+CREATE POLICY "Team access" 
+  USING (
+    team_id IN (
+      SELECT team_id FROM team_members
+      WHERE user_id = auth.uid()
+    )
+  );
+```
+
+**Impact**: 99.78% faster queries
+
+### 6. Specify Roles
+
+Always use `TO` clause:
+
+```sql
+-- Before: Runs for all roles
+CREATE POLICY "User access"
+  USING (auth.uid() = user_id);
+
+-- After: Only runs for authenticated
+CREATE POLICY "User access"
+  TO authenticated
+  USING ((SELECT auth.uid()) = user_id);
+```
+
+**Impact**: 99.78% faster for anon users (policy skipped entirely)
+
+## Testing RLS Policies
+
+### Manual Testing
+
+Test as different users:
+
+```sql
+-- Test as anonymous user
+SET ROLE anon;
+SELECT * FROM posts; -- Should only show published posts
+
+-- Test as authenticated user
+SET ROLE authenticated;
+SET request.jwt.claims.sub = '<user-uuid>';
+SELECT * FROM posts; -- Should show user's posts
+
+-- Reset
+RESET ROLE;
+```
+
+### Automated Testing with pgTAP
+
+```sql
+BEGIN;
+SELECT plan(3);
+
+-- Test anonymous access
+SET ROLE anon;
+SELECT results_eq(
+  'SELECT id FROM posts WHERE published = false',
+  ARRAY[]::bigint[],
+  'Anon users cannot see unpublished posts'
+);
+
+-- Test authenticated access
+SET ROLE authenticated;
+SET request.jwt.claims.sub = 'user-123';
+SELECT ok(
+  EXISTS(SELECT 1 FROM posts WHERE user_id = 'user-123'),
+  'Users can see their own posts'
+);
+
+SELECT * FROM finish();
+ROLLBACK;
+```
+
+## Bypassing RLS
+
+### Service Role Key
+
+The `service_role` key bypasses all RLS:
+
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://your-project.supabase.co',
+  'your-service-role-key' // Bypasses RLS!
+)
+```
+
+<Danger>
+**Never use service_role key in client-side code!** This gives unrestricted database access.
+
+**Safe usage**:
+- Server-side code only
+- Admin tools
+- Background jobs
+- Database migrations
+</Danger>
+
+### Custom Roles with Bypass
+
+Create roles that bypass RLS:
+
+```sql
+CREATE ROLE admin_role;
+ALTER ROLE admin_role WITH BYPASSRLS;
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No rows returned after enabling RLS">
+    **Cause**: RLS enabled but no policies created
+    
+    **Solution**:
+    ```sql
+    -- Check if RLS is enabled
+    SELECT tablename, rowsecurity 
+    FROM pg_tables 
+    WHERE schemaname = 'public';
+    
+    -- Create appropriate policies
+    CREATE POLICY "Enable access" ON table_name
+      FOR SELECT TO authenticated USING (true);
+    ```
+  </Accordion>
+  
+  <Accordion title="Policies not working as expected">
+    **Cause**: Multiple policies are combined with OR logic
+    
+    **Solution**:
+    - Check all policies on the table
+    - Use `RESTRICTIVE` policies for AND logic
+    - Test with specific roles: `SET ROLE authenticated`
+  </Accordion>
+  
+  <Accordion title="Performance issues">
+    **Cause**: Missing indexes or inefficient policies
+    
+    **Solution**:
+    - Add indexes on columns used in policies
+    - Wrap functions with `SELECT`
+    - Minimize table joins
+    - Use security definer functions
+    - Always add filters to queries
+  </Accordion>
+  
+  <Accordion title="auth.uid() returns null">
+    **Cause**: User not authenticated or token expired
+    
+    **Solution**:
+    ```sql
+    -- Always check for null
+    CREATE POLICY "Safe policy"
+      USING (
+        auth.uid() IS NOT NULL AND 
+        auth.uid() = user_id
+      );
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Steps>
+  <Step title="Enable RLS on all tables">
+    Never leave tables in `public` schema without RLS
+  </Step>
+  
+  <Step title="Start restrictive, then open up">
+    Begin with policies that deny everything, then add access:
+    
+    ```sql
+    -- Start here
+    CREATE POLICY "Deny all" ON table_name
+      USING (false);
+    
+    -- Add specific access
+    CREATE POLICY "Allow user access" ON table_name
+      FOR SELECT TO authenticated
+      USING (user_id = auth.uid());
+    ```
+  </Step>
+  
+  <Step title="Test policies thoroughly">
+    Test as different user types before deploying
+  </Step>
+  
+  <Step title="Monitor performance">
+    Use Performance Advisor to find slow policies
+  </Step>
+  
+  <Step title="Document complex policies">
+    Add comments explaining business logic
+    
+    ```sql
+    -- Team admins can delete any team document
+    -- Regular members can only delete their own
+    CREATE POLICY "Delete permissions" ...
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Encryption" icon="lock" href="./encryption">
+    Learn about data encryption in Supabase
+  </Card>
+  
+  <Card title="Network Security" icon="network-wired" href="./network">
+    Configure IP restrictions and SSL
+  </Card>
+  
+  <Card title="Testing Guide" icon="flask" href="/development/testing">
+    Set up automated RLS testing
+  </Card>
+  
+  <Card title="Performance Tuning" icon="gauge" href="/platform/performance">
+    Optimize RLS policy performance
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+- [PostgreSQL RLS Documentation](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)
+- [RLS Performance Benchmarks](https://github.com/GaryAustin1/RLS-Performance)
+- [Supabase RLS Guide](https://github.com/orgs/supabase/discussions/14576)
+- [Community Test Helpers](https://github.com/usebasejump/supabase-test-helpers)

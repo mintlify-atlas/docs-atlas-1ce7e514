@@ -1,0 +1,554 @@
+---
+title: 'PostgreSQL Extensions'
+description: 'Extend your database with powerful PostgreSQL extensions'
+---
+
+PostgreSQL extensions add functionality beyond the core database capabilities. Supabase comes pre-configured with over 50 extensions, including popular ones for vector search, full-text search, geospatial data, and more.
+
+## What are Extensions?
+
+Extensions are modular packages that add new features to PostgreSQL without modifying the core database engine. They can provide:
+
+- New data types (e.g., vectors, geometric types)
+- New functions (e.g., similarity search, distance calculations)
+- New operators and index types
+- Foreign data wrappers for external data sources
+- Administrative and monitoring tools
+
+## Managing Extensions
+
+### Enable an Extension
+
+<Tabs>
+  <Tab title="Dashboard">
+    1. Go to **Database** → **Extensions** in the Dashboard
+    2. Find the extension you want to enable
+    3. Click the toggle to enable it
+  </Tab>
+  <Tab title="SQL">
+    ```sql
+    -- Enable an extension
+    create extension if not exists pgvector with schema extensions;
+
+    -- Enable with specific schema
+    create extension if not exists postgis with schema public;
+    ```
+  </Tab>
+</Tabs>
+
+### Disable an Extension
+
+```sql
+-- Disable an extension
+drop extension if exists pgvector;
+
+-- Cascade to drop dependent objects
+drop extension if exists postgis cascade;
+```
+
+### List Installed Extensions
+
+```sql
+-- View all installed extensions
+select
+  extname as extension_name,
+  extversion as version,
+  nspname as schema
+from pg_extension
+join pg_namespace on pg_extension.extnamespace = pg_namespace.oid
+order by extname;
+```
+
+## Popular Extensions
+
+### pgvector - Vector Embeddings
+
+Store and query vector embeddings for AI/ML applications.
+
+```sql
+-- Enable the extension
+create extension if not exists vector;
+
+-- Create a table with vector column
+create table documents (
+  id bigint primary key generated always as identity,
+  content text,
+  embedding vector(1536)  -- OpenAI embeddings are 1536 dimensions
+);
+
+-- Create an index for fast similarity search
+create index on documents
+  using ivfflat (embedding vector_cosine_ops)
+  with (lists = 100);
+
+-- Find similar documents
+select id, content
+from documents
+order by embedding <=> '[0.1, 0.2, ...]'::vector
+limit 5;
+```
+
+#### Real Example from Supabase Source
+
+```sql
+-- Enable vector extension
+create extension if not exists vector with schema public;
+
+-- Create page sections table with embeddings
+create table page_section (
+  id bigserial primary key,
+  page_id bigint not null references page on delete cascade,
+  content text,
+  token_count int,
+  embedding vector(1536)
+);
+
+-- Similarity search function
+create or replace function match_page_sections(
+  embedding vector(1536),
+  match_threshold float,
+  match_count int,
+  min_content_length int
+)
+returns table (path text, content text, similarity float)
+language plpgsql
+as $$
+begin
+  return query
+  select
+    page.path,
+    page_section.content,
+    (page_section.embedding <#> embedding) * -1 as similarity
+  from page_section
+  join page on page_section.page_id = page.id
+  where length(page_section.content) >= min_content_length
+    and (page_section.embedding <#> embedding) * -1 > match_threshold
+  order by page_section.embedding <#> embedding
+  limit match_count;
+end;
+$$;
+```
+
+### PostGIS - Geospatial Data
+
+Work with geographic and geometric data.
+
+```sql
+-- Enable PostGIS
+create extension if not exists postgis;
+
+-- Create a table with location data
+create table locations (
+  id bigint primary key,
+  name text,
+  position geography(Point, 4326)
+);
+
+-- Insert a location (longitude, latitude)
+insert into locations (name, position)
+values (
+  'San Francisco',
+  ST_GeogFromText('POINT(-122.4194 37.7749)')
+);
+
+-- Find locations within 10km radius
+select name
+from locations
+where ST_DWithin(
+  position,
+  ST_GeogFromText('POINT(-122.4194 37.7749)'),
+  10000  -- 10km in meters
+);
+
+-- Calculate distance between points
+select
+  name,
+  ST_Distance(
+    position,
+    ST_GeogFromText('POINT(-122.4194 37.7749)')
+  ) / 1000 as distance_km
+from locations
+order by distance_km;
+```
+
+### pg_cron - Scheduled Jobs
+
+Run periodic jobs directly in your database.
+
+```sql
+-- Enable pg_cron (requires superuser or pre-enabled by Supabase)
+select cron.schedule(
+  'cleanup-old-data',           -- job name
+  '0 2 * * *',                  -- cron expression (2 AM daily)
+  $$
+  delete from logs
+  where created_at < now() - interval '30 days';
+  $$
+);
+
+-- Schedule hourly aggregation
+select cron.schedule(
+  'hourly-stats',
+  '0 * * * *',  -- Every hour
+  $$
+  refresh materialized view hourly_statistics;
+  $$
+);
+
+-- List scheduled jobs
+select * from cron.job;
+
+-- Unschedule a job
+select cron.unschedule('cleanup-old-data');
+```
+
+### pg_net - HTTP Requests
+
+Make HTTP requests from your database.
+
+```sql
+-- Enable pg_net
+create extension if not exists pg_net;
+
+-- Make a simple GET request
+select
+  net.http_get(
+    url := 'https://api.github.com/repos/supabase/supabase',
+    headers := '{"User-Agent": "supabase"}'
+  ) as response;
+
+-- Make a POST request
+select
+  net.http_post(
+    url := 'https://api.example.com/webhook',
+    headers := '{"Content-Type": "application/json"}',
+    body := jsonb_build_object(
+      'event', 'user.created',
+      'user_id', 123
+    )
+  );
+
+-- Use in a trigger to call webhooks
+create or replace function notify_webhook()
+returns trigger as $$
+begin
+  perform net.http_post(
+    url := 'https://api.example.com/webhook',
+    headers := '{"Content-Type": "application/json"}',
+    body := row_to_json(new)
+  );
+  return new;
+end;
+$$ language plpgsql;
+```
+
+### pgjwt - JSON Web Tokens
+
+Create and verify JWTs in SQL.
+
+```sql
+-- Enable extension
+create extension if not exists pgjwt;
+
+-- Create a JWT
+select sign(
+  payload := json_build_object(
+    'sub', '1234567890',
+    'name', 'John Doe',
+    'iat', extract(epoch from now())
+  ),
+  secret := 'your-secret-key',
+  algorithm := 'HS256'
+);
+
+-- Verify a JWT
+select verify(
+  token := 'eyJhbGc...',
+  secret := 'your-secret-key',
+  algorithm := 'HS256'
+);
+```
+
+### pgcrypto - Encryption
+
+Encrypt sensitive data in your database.
+
+```sql
+-- Enable extension
+create extension if not exists pgcrypto;
+
+-- Generate random values
+select gen_random_uuid();  -- Random UUID
+select gen_random_bytes(32);  -- Random bytes
+
+-- Hash passwords
+select crypt('mypassword', gen_salt('bf'));  -- Bcrypt
+
+-- Verify password
+select
+  crypt('mypassword', stored_hash) = stored_hash
+  as password_matches;
+
+-- Encrypt/decrypt data
+select
+  pgp_sym_encrypt('sensitive data', 'encryption-key') as encrypted;
+
+select
+  pgp_sym_decrypt(encrypted_column, 'encryption-key') as decrypted
+from secure_table;
+```
+
+### uuid-ossp - UUID Generation
+
+Generate various types of UUIDs.
+
+```sql
+-- Enable extension
+create extension if not exists "uuid-ossp";
+
+-- Generate UUIDs
+select uuid_generate_v1();  -- Time-based UUID
+select uuid_generate_v4();  -- Random UUID
+
+-- Use in table defaults
+create table sessions (
+  id uuid primary key default uuid_generate_v4(),
+  user_id bigint,
+  created_at timestamptz default now()
+);
+```
+
+### pg_stat_statements - Query Performance
+
+Track and analyze query performance.
+
+```sql
+-- View most time-consuming queries
+select
+  query,
+  calls,
+  total_exec_time,
+  mean_exec_time,
+  max_exec_time
+from pg_stat_statements
+order by total_exec_time desc
+limit 10;
+
+-- Reset statistics
+select pg_stat_statements_reset();
+```
+
+### pg_trgm - Fuzzy String Matching
+
+Find similar strings using trigram matching.
+
+```sql
+-- Enable extension
+create extension if not exists pg_trgm;
+
+-- Create index for fast similarity search
+create index on products using gin (name gin_trgm_ops);
+
+-- Find similar products
+select name, similarity(name, 'iPhone') as sim
+from products
+where name % 'iPhone'  -- % operator for similarity
+order by sim desc
+limit 5;
+
+-- Fuzzy search
+select *
+from users
+where username ilike '%john%'
+order by similarity(username, 'john') desc;
+```
+
+### TimescaleDB - Time-Series Data
+
+Optimize time-series data storage and queries.
+
+```sql
+-- Enable TimescaleDB
+create extension if not exists timescaledb;
+
+-- Create a regular table
+create table sensor_data (
+  time timestamptz not null,
+  sensor_id integer,
+  temperature numeric,
+  humidity numeric
+);
+
+-- Convert to hypertable (time-series optimized)
+select create_hypertable('sensor_data', 'time');
+
+-- Insert data
+insert into sensor_data (time, sensor_id, temperature, humidity)
+values
+  (now(), 1, 23.5, 65.2),
+  (now(), 2, 22.8, 68.1);
+
+-- Time-based queries are automatically optimized
+select
+  time_bucket('1 hour', time) as hour,
+  sensor_id,
+  avg(temperature) as avg_temp
+from sensor_data
+where time > now() - interval '24 hours'
+group by hour, sensor_id
+order by hour desc;
+```
+
+## Extension Schemas
+
+Most extensions are installed in the `extensions` schema to keep things organized:
+
+```sql
+-- Install in extensions schema (recommended)
+create extension pgvector with schema extensions;
+
+-- Use fully qualified names
+select extensions.vector_dims('[1,2,3]'::extensions.vector);
+
+-- Or set search path
+set search_path to public, extensions;
+select vector_dims('[1,2,3]'::vector);
+```
+
+<Note>
+  The `extensions` schema is accessible to `public` by default. For sensitive extensions, create a separate schema with restricted access.
+</Note>
+
+## Upgrading Extensions
+
+When new extension versions become available:
+
+```sql
+-- Check current version
+select extversion from pg_extension where extname = 'pgvector';
+
+-- Upgrade extension
+alter extension pgvector update to '0.5.0';
+
+-- Upgrade to latest version
+alter extension pgvector update;
+```
+
+## Custom Extensions
+
+You can install pure SQL extensions directly:
+
+```sql
+-- Example: Install a custom extension from SQL
+create schema if not exists my_extensions;
+
+create or replace function my_extensions.custom_function()
+returns text
+language sql
+as $$
+  select 'Hello from custom extension!';
+$$;
+```
+
+For more complex extensions, use the [database.dev](https://database.dev/) package manager or submit an extension request.
+
+## Available Extensions
+
+Supabase provides over 50 pre-installed extensions:
+
+<AccordionGroup>
+  <Accordion title="AI & Vector Search">
+    - **pgvector**: Vector similarity search for AI/ML
+    - **pg_embedding**: Additional vector operations
+  </Accordion>
+
+  <Accordion title="Full-Text Search">
+    - **pg_trgm**: Fuzzy string matching
+    - **rum**: Advanced full-text search indexes
+    - **pgroonga**: Multi-language full-text search
+  </Accordion>
+
+  <Accordion title="Geospatial">
+    - **postgis**: Geographic objects and functions
+    - **postgis_topology**: Topology support
+    - **postgis_tiger_geocoder**: US address geocoding
+    - **pgrouting**: Geospatial routing
+  </Accordion>
+
+  <Accordion title="Time-Series">
+    - **timescaledb**: Time-series optimization
+  </Accordion>
+
+  <Accordion title="HTTP & Webhooks">
+    - **pg_net**: Make HTTP requests
+    - **pg_cron**: Schedule jobs
+  </Accordion>
+
+  <Accordion title="Security & Auth">
+    - **pgjwt**: JSON Web Tokens
+    - **pgcrypto**: Cryptographic functions
+    - **uuid-ossp**: UUID generation
+    - **pgaudit**: Audit logging
+  </Accordion>
+
+  <Accordion title="Data Integration">
+    - **postgres_fdw**: Foreign data wrapper
+    - **Wrappers**: Connect to external data sources
+  </Accordion>
+
+  <Accordion title="Performance & Monitoring">
+    - **pg_stat_statements**: Query performance stats
+    - **pg_repack**: Remove bloat without locking
+    - **hypopg**: Hypothetical indexes
+    - **index_advisor**: Index recommendations
+  </Accordion>
+</AccordionGroup>
+
+## Requesting Extensions
+
+If you need an extension that's not available:
+
+1. Check the [Extensions Discussion](https://github.com/orgs/supabase/discussions/33754)
+2. Upvote existing requests or create a new one
+3. Provide use case details to help prioritize
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Install extensions in dedicated schemas">
+    Keep extensions organized and avoid namespace pollution.
+  </Accordion>
+
+  <Accordion title="Only enable extensions you need">
+    Each extension adds overhead. Enable only what you use.
+  </Accordion>
+
+  <Accordion title="Test extension upgrades">
+    Test in a development environment before upgrading production.
+  </Accordion>
+
+  <Accordion title="Document extension usage">
+    Keep track of which extensions your project depends on.
+  </Accordion>
+
+  <Accordion title="Use extension-specific indexes">
+    Many extensions provide specialized index types for better performance.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tables" icon="table" href="/database/tables">
+    Create tables to use with extensions
+  </Card>
+  <Card title="Functions" icon="function" href="/database/functions">
+    Write functions using extension features
+  </Card>
+  <Card title="Migrations" icon="code-branch" href="/database/migrations">
+    Manage extensions in your migration files
+  </Card>
+  <Card title="Full Extension List" icon="list" href="/guides/database/extensions">
+    Browse all available extensions
+  </Card>
+</CardGroup>

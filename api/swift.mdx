@@ -1,0 +1,640 @@
+---
+title: 'Swift SDK'
+description: 'Complete reference for the Supabase Swift client library'
+icon: 'swift'
+---
+
+## Installation
+
+### Swift Package Manager
+
+Add Supabase Swift to your `Package.swift`:
+
+```swift
+dependencies: [
+  .package(
+    url: "https://github.com/supabase/supabase-swift",
+    from: "2.0.0"
+  )
+]
+```
+
+### Xcode
+
+1. In Xcode, go to File → Add Package Dependencies
+2. Enter the repository URL: `https://github.com/supabase/supabase-swift`
+3. Select the version and add to your target
+
+## Initializing
+
+Create a Supabase client to interact with your database.
+
+```swift
+import Supabase
+
+let supabase = SupabaseClient(
+  supabaseURL: URL(string: "YOUR_SUPABASE_URL")!,
+  supabaseKey: "YOUR_SUPABASE_ANON_KEY"
+)
+```
+
+<ParamField path="supabaseURL" type="URL" required>
+  The unique Supabase URL for your project.
+</ParamField>
+
+<ParamField path="supabaseKey" type="String" required>
+  The Supabase anon key for your project.
+</ParamField>
+
+<ParamField path="options" type="SupabaseClientOptions">
+  Optional configuration parameters.
+  
+  <Expandable title="options properties">
+    <ParamField path="auth" type="AuthClientOptions">
+      Authentication configuration.
+      
+      <Expandable title="auth properties">
+        <ParamField path="autoRefreshToken" type="Bool" default="true">
+          Automatically refresh the token before expiring.
+        </ParamField>
+        
+        <ParamField path="persistSession" type="Bool" default="true">
+          Whether to persist the user session.
+        </ParamField>
+        
+        <ParamField path="detectSessionInURL" type="Bool" default="true">
+          Detect OAuth grants in the URL and sign in automatically.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+    
+    <ParamField path="global" type="GlobalOptions">
+      Global configuration options.
+      
+      <Expandable title="global properties">
+        <ParamField path="headers" type="[String: String]">
+          Custom headers to send with every request.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Database Operations
+
+### Select Data
+
+Query data from your tables.
+
+```swift
+let response: [Country] = try await supabase
+  .from("countries")
+  .select()
+  .execute()
+  .value
+```
+
+<ResponseField name="value" type="[T]">
+  The returned rows from the query, decoded to your model type.
+</ResponseField>
+
+#### Define Models
+
+```swift
+struct Country: Codable {
+  let id: Int
+  let name: String
+  let code: String
+  let capital: String?
+}
+```
+
+#### Select with Filters
+
+```swift
+let country: Country = try await supabase
+  .from("countries")
+  .select()
+  .eq("id", value: 1)
+  .single()
+  .execute()
+  .value
+```
+
+#### Select Specific Columns
+
+```swift
+let response = try await supabase
+  .from("countries")
+  .select(columns: "name, capital")
+  .execute()
+  .value
+```
+
+#### Common Filters
+
+```swift
+// Equal to
+let data = try await supabase
+  .from("countries")
+  .select()
+  .eq("name", value: "Albania")
+  .execute()
+  .value
+
+// Not equal to
+let data = try await supabase
+  .from("countries")
+  .select()
+  .neq("name", value: "Albania")
+  .execute()
+  .value
+
+// Greater than
+let data = try await supabase
+  .from("countries")
+  .select()
+  .gt("population", value: 1000000)
+  .execute()
+  .value
+
+// Less than
+let data = try await supabase
+  .from("countries")
+  .select()
+  .lt("population", value: 1000000)
+  .execute()
+  .value
+
+// Like (pattern matching)
+let data = try await supabase
+  .from("countries")
+  .select()
+  .like("name", pattern: "%Alba%")
+  .execute()
+  .value
+
+// In list
+let data = try await supabase
+  .from("countries")
+  .select()
+  .in("name", values: ["Albania", "Algeria"])
+  .execute()
+  .value
+```
+
+### Insert Data
+
+Insert rows into your tables.
+
+```swift
+struct NewCountry: Encodable {
+  let name: String
+  let code: String
+}
+
+let newCountry = NewCountry(name: "Denmark", code: "DK")
+
+let response: [Country] = try await supabase
+  .from("countries")
+  .insert(newCountry)
+  .select()
+  .execute()
+  .value
+```
+
+<ParamField path="values" type="Encodable | [Encodable]" required>
+  The values to insert. Can be a single object or an array of objects.
+</ParamField>
+
+#### Insert Multiple Rows
+
+```swift
+let countries = [
+  NewCountry(name: "Denmark", code: "DK"),
+  NewCountry(name: "Norway", code: "NO")
+]
+
+let response: [Country] = try await supabase
+  .from("countries")
+  .insert(countries)
+  .select()
+  .execute()
+  .value
+```
+
+### Update Data
+
+Update existing rows in your tables.
+
+```swift
+struct CountryUpdate: Encodable {
+  let name: String
+}
+
+let update = CountryUpdate(name: "Australia")
+
+let response: [Country] = try await supabase
+  .from("countries")
+  .update(update)
+  .eq("id", value: 1)
+  .select()
+  .execute()
+  .value
+```
+
+<ParamField path="values" type="Encodable" required>
+  The values to update.
+</ParamField>
+
+### Upsert Data
+
+Insert or update rows based on unique constraints.
+
+```swift
+let country = Country(id: 1, name: "Australia", code: "AU", capital: "Canberra")
+
+let response: [Country] = try await supabase
+  .from("countries")
+  .upsert(country)
+  .select()
+  .execute()
+  .value
+```
+
+### Delete Data
+
+Delete rows from your tables.
+
+```swift
+try await supabase
+  .from("countries")
+  .delete()
+  .eq("id", value: 1)
+  .execute()
+```
+
+## Authentication
+
+### Sign Up
+
+Create a new user account.
+
+```swift
+let response = try await supabase.auth.signUp(
+  email: "example@email.com",
+  password: "example-password"
+)
+```
+
+<ParamField path="email" type="String" required>
+  The user's email address.
+</ParamField>
+
+<ParamField path="password" type="String" required>
+  The user's password.
+</ParamField>
+
+<ParamField path="data" type="[String: AnyJSON]">
+  Additional user metadata.
+</ParamField>
+
+<ParamField path="redirectTo" type="URL">
+  A URL to redirect to after signup.
+</ParamField>
+
+<ResponseField name="response" type="AuthResponse">
+  <Expandable title="response properties">
+    <ResponseField name="user" type="User">
+      The user object.
+    </ResponseField>
+    
+    <ResponseField name="session" type="Session?">
+      The session object.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Sign In
+
+Sign in an existing user.
+
+```swift
+let session = try await supabase.auth.signIn(
+  email: "example@email.com",
+  password: "example-password"
+)
+```
+
+### Sign Out
+
+Sign out the current user.
+
+```swift
+try await supabase.auth.signOut()
+```
+
+### Get Session
+
+Get the current session.
+
+```swift
+let session = try await supabase.auth.session
+```
+
+<ResponseField name="session" type="Session">
+  The current session object.
+</ResponseField>
+
+### Get User
+
+Get the current user.
+
+```swift
+let user = try await supabase.auth.user()
+```
+
+<ResponseField name="user" type="User">
+  The current user object.
+</ResponseField>
+
+### Auth State Changes
+
+Listen to authentication state changes.
+
+```swift
+for await state in await supabase.auth.authStateChanges {
+  switch state.event {
+  case .signedIn:
+    print("User signed in: \(state.session?.user.email ?? "")")
+  case .signedOut:
+    print("User signed out")
+  default:
+    break
+  }
+}
+```
+
+## Storage
+
+### Upload File
+
+Upload a file to a storage bucket.
+
+```swift
+import Foundation
+
+let fileData = Data(contentsOf: fileURL)
+
+let response = try await supabase.storage
+  .from("avatars")
+  .upload(
+    path: "public/avatar1.png",
+    file: fileData,
+    options: FileOptions(
+      contentType: "image/png"
+    )
+  )
+```
+
+<ParamField path="path" type="String" required>
+  The file path including the file name.
+</ParamField>
+
+<ParamField path="file" type="Data" required>
+  The file data to upload.
+</ParamField>
+
+<ParamField path="options" type="FileOptions">
+  Upload options.
+  
+  <Expandable title="options properties">
+    <ParamField path="cacheControl" type="String">
+      Cache control header value.
+    </ParamField>
+    
+    <ParamField path="contentType" type="String">
+      MIME type of the file.
+    </ParamField>
+    
+    <ParamField path="upsert" type="Bool" default="false">
+      When true, overwrites existing file with the same path.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Download File
+
+Download a file from storage.
+
+```swift
+let data = try await supabase.storage
+  .from("avatars")
+  .download(path: "public/avatar1.png")
+```
+
+<ParamField path="path" type="String" required>
+  The file path to download.
+</ParamField>
+
+<ResponseField name="data" type="Data">
+  The file data.
+</ResponseField>
+
+### List Files
+
+List all files in a bucket.
+
+```swift
+let files = try await supabase.storage
+  .from("avatars")
+  .list(
+    path: "public",
+    options: SearchOptions(
+      limit: 100,
+      offset: 0,
+      sortBy: SortBy(column: "name", order: "asc")
+    )
+  )
+```
+
+### Delete Files
+
+Delete files from storage.
+
+```swift
+let response = try await supabase.storage
+  .from("avatars")
+  .remove(paths: ["public/avatar1.png", "public/avatar2.png"])
+```
+
+### Get Public URL
+
+Get the public URL for a file.
+
+```swift
+let url = try supabase.storage
+  .from("avatars")
+  .getPublicURL(path: "public/avatar1.png")
+
+print(url)
+```
+
+## Realtime
+
+### Subscribe to Changes
+
+Listen to database changes in realtime.
+
+```swift
+let channel = await supabase.channel("db-changes")
+
+let insertions = await channel.onPostgresChange(
+  InsertAction.self,
+  schema: "public",
+  table: "countries"
+) { insert in
+  print("New country: \(insert.record)")
+}
+
+await channel.subscribe()
+```
+
+<ParamField path="action" type="PostgresAction.Type" required>
+  The database action to listen for: `InsertAction`, `UpdateAction`, `DeleteAction`, or `AnyAction`.
+</ParamField>
+
+<ParamField path="schema" type="String" required>
+  The database schema to listen to.
+</ParamField>
+
+<ParamField path="table" type="String" required>
+  The table to listen to.
+</ParamField>
+
+<ParamField path="callback" type="(T) -> Void" required>
+  Function to call when an event occurs.
+</ParamField>
+
+### Unsubscribe
+
+Stop listening to changes.
+
+```swift
+await supabase.removeChannel(channel)
+```
+
+## Edge Functions
+
+### Invoke Function
+
+Invoke a Supabase Edge Function.
+
+```swift
+struct FunctionPayload: Encodable {
+  let name: String
+}
+
+struct FunctionResponse: Decodable {
+  let message: String
+}
+
+let response: FunctionResponse = try await supabase.functions
+  .invoke(
+    "hello-world",
+    options: FunctionInvokeOptions(
+      body: FunctionPayload(name: "Functions")
+    )
+  )
+```
+
+<ParamField path="functionName" type="String" required>
+  The name of the Edge Function to invoke.
+</ParamField>
+
+<ParamField path="options" type="FunctionInvokeOptions">
+  Function invocation options.
+  
+  <Expandable title="options properties">
+    <ParamField path="body" type="Encodable">
+      The request body to send to the function.
+    </ParamField>
+    
+    <ParamField path="headers" type="[String: String]">
+      Custom headers to send with the request.
+    </ParamField>
+    
+    <ParamField path="method" type="HTTPMethod" default=".post">
+      HTTP method to use.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="response" type="T">
+  The response data from the function, decoded to your model type.
+</ResponseField>
+
+## Error Handling
+
+Handle errors using do-catch blocks:
+
+```swift
+do {
+  let countries: [Country] = try await supabase
+    .from("countries")
+    .select()
+    .execute()
+    .value
+  print("Countries: \(countries)")
+} catch let error as PostgrestError {
+  print("Database error: \(error.message)")
+} catch {
+  print("Unexpected error: \(error)")
+}
+```
+
+## SwiftUI Integration
+
+Use Supabase with SwiftUI's async/await:
+
+```swift
+import SwiftUI
+import Supabase
+
+struct CountriesView: View {
+  @State private var countries: [Country] = []
+  
+  var body: some View {
+    List(countries, id: \.id) { country in
+      Text(country.name)
+    }
+    .task {
+      await loadCountries()
+    }
+  }
+  
+  func loadCountries() async {
+    do {
+      countries = try await supabase
+        .from("countries")
+        .select()
+        .execute()
+        .value
+    } catch {
+      print("Error loading countries: \(error)")
+    }
+  }
+}
+```
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/supabase/supabase-swift">
+    View the source code and contribute
+  </Card>
+  
+  <Card title="Swift Package Index" icon="swift" href="https://swiftpackageindex.com/supabase/supabase-swift">
+    View package details and documentation
+  </Card>
+</CardGroup>

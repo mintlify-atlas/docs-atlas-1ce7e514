@@ -1,0 +1,576 @@
+---
+title: 'Next.js Integration Guide'
+description: 'Build full-stack applications with Next.js and Supabase'
+icon: 'N'
+---
+
+Learn how to integrate Supabase with Next.js using the App Router, Server Components, and Server Actions for a modern, full-stack development experience.
+
+## Why Next.js + Supabase?
+
+Next.js and Supabase work perfectly together:
+- **Server Components** for secure data fetching
+- **Server Actions** for mutations
+- **Middleware** for auth protection
+- **Edge Runtime** support
+- **Type safety** with TypeScript
+
+## Quick Start
+
+<Steps>
+
+<Step title="Create a Next.js App">
+
+```bash
+npx create-next-app@latest my-app
+cd my-app
+```
+
+Choose:
+- TypeScript: Yes
+- App Router: Yes
+- Tailwind CSS: Yes (recommended)
+
+</Step>
+
+<Step title="Install Supabase">
+
+```bash
+npm install @supabase/supabase-js @supabase/ssr
+```
+
+</Step>
+
+<Step title="Set Up Environment Variables">
+
+Create `.env.local`:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+</Step>
+
+<Step title="Create Supabase Clients">
+
+Create `lib/supabase/client.ts` for Client Components:
+
+```typescript
+import { createBrowserClient } from '@supabase/ssr'
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
+```
+
+Create `lib/supabase/server.ts` for Server Components:
+
+```typescript
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+export async function createClient() {
+  const cookieStore = await cookies()
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Server Component - ignore
+          }
+        },
+      },
+    }
+  )
+}
+```
+
+Create `lib/supabase/middleware.ts` for Middleware:
+
+```typescript
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export async function updateSession(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({
+    request,
+  })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({
+            request,
+          })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  // Refresh session if expired
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  return supabaseResponse
+}
+```
+
+</Step>
+
+<Step title="Set Up Middleware">
+
+Create `middleware.ts` in your project root:
+
+```typescript
+import { type NextRequest } from 'next/server'
+import { updateSession } from '@/lib/supabase/middleware'
+
+export async function middleware(request: NextRequest) {
+  return await updateSession(request)
+}
+
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
+}
+```
+
+</Step>
+
+</Steps>
+
+## Usage Patterns
+
+### Server Components (Recommended)
+
+Fetch data securely in Server Components:
+
+```typescript
+import { createClient } from '@/lib/supabase/server'
+
+export default async function Page() {
+  const supabase = await createClient()
+  
+  const { data: posts } = await supabase
+    .from('posts')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  return (
+    <div>
+      <h1>Posts</h1>
+      <ul>
+        {posts?.map((post) => (
+          <li key={post.id}>{post.title}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+### Client Components
+
+Use Client Components for interactivity:
+
+```typescript
+'use client'
+
+import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState } from 'react'
+
+export default function ClientComponent() {
+  const [data, setData] = useState<any[]>([])
+  const supabase = createClient()
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data } = await supabase.from('posts').select('*')
+      setData(data || [])
+    }
+    
+    fetchData()
+  }, [supabase])
+
+  return (
+    <div>
+      {data.map((item) => (
+        <div key={item.id}>{item.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Server Actions
+
+Handle mutations with Server Actions:
+
+```typescript
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+
+export async function createPost(formData: FormData) {
+  const supabase = await createClient()
+
+  const title = formData.get('title') as string
+  const content = formData.get('content') as string
+
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    redirect('/login')
+  }
+
+  const { error } = await supabase
+    .from('posts')
+    .insert({ title, content, user_id: user.id })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  revalidatePath('/posts')
+  redirect('/posts')
+}
+
+export async function deletePost(postId: string) {
+  const supabase = await createClient()
+
+  const { error } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', postId)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  revalidatePath('/posts')
+}
+```
+
+Use in components:
+
+```typescript
+import { createPost } from './actions'
+
+export default function CreatePostForm() {
+  return (
+    <form action={createPost}>
+      <input name="title" placeholder="Title" required />
+      <textarea name="content" placeholder="Content" required />
+      <button type="submit">Create Post</button>
+    </form>
+  )
+}
+```
+
+### Route Handlers
+
+Create API routes:
+
+```typescript
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+export async function GET(request: Request) {
+  const supabase = await createClient()
+  
+  const { data, error } = await supabase
+    .from('posts')
+    .select('*')
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ data })
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const body = await request.json()
+
+  const { data, error } = await supabase
+    .from('posts')
+    .insert(body)
+    .select()
+    .single()
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ data })
+}
+```
+
+## Authentication
+
+### Sign Up/Sign In
+
+Create `app/login/actions.ts`:
+
+```typescript
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+
+export async function login(formData: FormData) {
+  const supabase = await createClient()
+
+  const data = {
+    email: formData.get('email') as string,
+    password: formData.get('password') as string,
+  }
+
+  const { error } = await supabase.auth.signInWithPassword(data)
+
+  if (error) {
+    redirect('/error')
+  }
+
+  revalidatePath('/', 'layout')
+  redirect('/')
+}
+
+export async function signup(formData: FormData) {
+  const supabase = await createClient()
+
+  const data = {
+    email: formData.get('email') as string,
+    password: formData.get('password') as string,
+  }
+
+  const { error } = await supabase.auth.signUp(data)
+
+  if (error) {
+    redirect('/error')
+  }
+
+  revalidatePath('/', 'layout')
+  redirect('/')
+}
+```
+
+### Protected Routes
+
+Protect pages in Server Components:
+
+```typescript
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export default async function ProtectedPage() {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  return <div>Protected content for {user.email}</div>
+}
+```
+
+### OAuth Providers
+
+Sign in with OAuth:
+
+```typescript
+'use client'
+
+import { createClient } from '@/lib/supabase/client'
+
+export default function OAuthButtons() {
+  const supabase = createClient()
+
+  const signInWithGitHub = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        redirectTo: `${location.origin}/auth/callback`,
+      },
+    })
+  }
+
+  return (
+    <button onClick={signInWithGitHub}>
+      Sign in with GitHub
+    </button>
+  )
+}
+```
+
+Create callback handler at `app/auth/callback/route.ts`:
+
+```typescript
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/'
+
+  if (code) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error) {
+      return NextResponse.redirect(`${origin}${next}`)
+    }
+  }
+
+  return NextResponse.redirect(`${origin}/auth/auth-code-error`)
+}
+```
+
+## Real-time Subscriptions
+
+Subscribe to changes in Client Components:
+
+```typescript
+'use client'
+
+import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState } from 'react'
+
+export default function RealtimeComponent() {
+  const [messages, setMessages] = useState<any[]>([])
+  const supabase = createClient()
+
+  useEffect(() => {
+    // Load initial data
+    const loadMessages = async () => {
+      const { data } = await supabase.from('messages').select('*')
+      setMessages(data || [])
+    }
+    loadMessages()
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          setMessages((current) => [...current, payload.new])
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase])
+
+  return (
+    <div>
+      {messages.map((msg) => (
+        <div key={msg.id}>{msg.content}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Type Safety
+
+Generate types from your database:
+
+```bash
+npx supabase gen types typescript --project-id your-project-ref > lib/database.types.ts
+```
+
+Use types:
+
+```typescript
+import { Database } from '@/lib/database.types'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient<Database>(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+type Post = Database['public']['Tables']['posts']['Row']
+```
+
+## Best Practices
+
+<Card title="Use Server Components" icon="server">
+  Fetch data in Server Components when possible for better security and performance.
+</Card>
+
+<Card title="Server Actions for Mutations" icon="bolt">
+  Use Server Actions instead of Route Handlers for form submissions and mutations.
+</Card>
+
+<Card title="Client Components for Interactivity" icon="mouse-pointer">
+  Use Client Components only when you need hooks, event handlers, or browser APIs.
+</Card>
+
+<Card title="Middleware for Auth" icon="shield">
+  Use middleware to refresh auth sessions automatically.
+</Card>
+
+<Card title="Type Generation" icon="code">
+  Generate TypeScript types from your database schema.
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Build a Todo App" icon="list-check" href="/guides/building-a-todo-app">
+    Follow our step-by-step tutorial
+  </Card>
+  <Card title="User Management" icon="users" href="/guides/user-management">
+    Add user profiles and avatars
+  </Card>
+  <Card title="File Uploads" icon="upload" href="/guides/file-uploads">
+    Integrate Supabase Storage
+  </Card>
+  <Card title="Realtime Chat" icon="messages" href="/guides/realtime-chat">
+    Build a chat application
+  </Card>
+</CardGroup>

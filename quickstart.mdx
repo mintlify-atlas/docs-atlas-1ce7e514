@@ -1,80 +1,739 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Quickstart Guide'
+description: 'Build your first Supabase application in under 10 minutes'
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
+This quickstart guide will walk you through:
 
-### Step 1: Set up your local environment
+1. Creating a Supabase project
+2. Setting up a database table
+3. Connecting from your application
+4. Performing CRUD operations
+5. Adding authentication
+6. Securing data with Row Level Security
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+By the end, you'll have a working application with authentication and a secure database.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Prefer video? Check out our [video tutorials](https://supabase.com/docs/guides/getting-started/tutorials) or follow framework-specific guides for [Next.js](https://supabase.com/docs/guides/getting-started/tutorials/with-nextjs), [React](https://supabase.com/docs/guides/getting-started/tutorials/with-react), or [Flutter](https://supabase.com/docs/guides/getting-started/tutorials/with-flutter).
 </Note>
+
+## Step 1: Create a Supabase Project
+
+<Steps>
+  <Step title="Sign up for Supabase">
+    Navigate to [supabase.com/dashboard](https://supabase.com/dashboard) and sign up for a free account using:
+    - GitHub
+    - GitLab
+    - Bitbucket
+    - Email/password
+    
+    <Tip>
+    Using a Git provider enables seamless integration with CI/CD pipelines and Vercel deployments.
+    </Tip>
+  </Step>
+  
+  <Step title="Create a new project">
+    Click **New Project** and fill in the details:
+    
+    - **Name**: Choose a descriptive name (e.g., "my-app")
+    - **Database Password**: Use a strong password and save it securely
+    - **Region**: Select the region closest to your users
+    - **Pricing Plan**: Start with the Free tier
+    
+    Click **Create new project** and wait 2-3 minutes for provisioning.
+    
+    <Warning>
+    Save your database password! You'll need it for direct database connections. The password cannot be recovered, only reset.
+    </Warning>
+  </Step>
+  
+  <Step title="Get your API credentials">
+    Once your project is ready:
+    
+    1. Go to **Project Settings** (gear icon in sidebar)
+    2. Navigate to the **API** section
+    3. Copy the following values:
+       - **Project URL** (e.g., `https://xyzcompany.supabase.co`)
+       - **anon public** key (safe to use in browsers)
+    
+    You'll use these to connect your application.
+  </Step>
+</Steps>
+
+## Step 2: Create Your First Table
+
+Let's create a simple `todos` table to manage tasks.
+
+<Steps>
+  <Step title="Open SQL Editor">
+    Navigate to **SQL Editor** in the left sidebar. This is where you can run SQL queries and manage your database schema.
+  </Step>
+  
+  <Step title="Create the table">
+    Click **New Query** and paste the following SQL:
+    
+    ```sql
+    -- Create todos table
+    create table todos (
+      id bigint generated always as identity primary key,
+      user_id uuid references auth.users(id) on delete cascade not null,
+      title text not null,
+      description text,
+      is_complete boolean default false,
+      created_at timestamptz default now()
+    );
+    
+    -- Enable Row Level Security
+    alter table todos enable row level security;
+    
+    -- Create policies
+    create policy "Users can view their own todos"
+      on todos for select
+      using (auth.uid() = user_id);
+    
+    create policy "Users can create their own todos"
+      on todos for insert
+      with check (auth.uid() = user_id);
+    
+    create policy "Users can update their own todos"
+      on todos for update
+      using (auth.uid() = user_id);
+    
+    create policy "Users can delete their own todos"
+      on todos for delete
+      using (auth.uid() = user_id);
+    ```
+    
+    Click **Run** or press `Cmd/Ctrl + Enter` to execute.
+  </Step>
+  
+  <Step title="Verify the table">
+    Navigate to **Table Editor** in the sidebar. You should see your new `todos` table with the defined columns.
+    
+    You can manually add test data here, but we'll insert data programmatically in the next step.
+  </Step>
+</Steps>
+
+<Note>
+**What is Row Level Security (RLS)?**
+
+RLS is a PostgreSQL feature that restricts which rows users can access. The policies we created ensure users can only see and modify their own todos. This security is enforced at the database level, not in your application code.
+</Note>
+
+## Step 3: Install the Supabase Client
+
+Now let's connect to Supabase from your application.
+
+<Tabs>
+  <Tab title="JavaScript/TypeScript">
+    Install the Supabase JavaScript client:
+    
+    ```bash
+    npm install @supabase/supabase-js
+    ```
+    
+    Create a Supabase client (`lib/supabase.js` or `lib/supabase.ts`):
+    
+    ```typescript
+    import { createClient } from '@supabase/supabase-js'
+    
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    
+    export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    ```
+    
+    Create a `.env.local` file with your credentials:
+    
+    ```bash
+    NEXT_PUBLIC_SUPABASE_URL=your-project-url
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+    ```
+    
+    <Tip>
+    The `NEXT_PUBLIC_` prefix makes variables available in the browser when using Next.js. For other frameworks, check their documentation on environment variables.
+    </Tip>
+  </Tab>
+  
+  <Tab title="Python">
+    Install the Supabase Python client:
+    
+    ```bash
+    pip install supabase
+    ```
+    
+    Create a Supabase client:
+    
+    ```python
+    import os
+    from supabase import create_client, Client
+    
+    url: str = os.environ.get("SUPABASE_URL")
+    key: str = os.environ.get("SUPABASE_KEY")
+    supabase: Client = create_client(url, key)
+    ```
+    
+    Create a `.env` file:
+    
+    ```bash
+    SUPABASE_URL=your-project-url
+    SUPABASE_KEY=your-anon-key
+    ```
+  </Tab>
+  
+  <Tab title="Flutter">
+    Add Supabase to `pubspec.yaml`:
+    
+    ```yaml
+    dependencies:
+      supabase_flutter: ^2.0.0
+    ```
+    
+    Initialize Supabase in your `main.dart`:
+    
+    ```dart
+    import 'package:supabase_flutter/supabase_flutter.dart';
+    
+    Future<void> main() async {
+      WidgetsFlutterBinding.ensureInitialized();
+      
+      await Supabase.initialize(
+        url: 'your-project-url',
+        anonKey: 'your-anon-key',
+      );
+      
+      runApp(MyApp());
+    }
+    
+    // Get a reference to the client
+    final supabase = Supabase.instance.client;
+    ```
+  </Tab>
+  
+  <Tab title="Swift">
+    Add Supabase to your Swift package dependencies:
+    
+    ```swift
+    dependencies: [
+      .package(
+        url: "https://github.com/supabase/supabase-swift.git",
+        from: "2.0.0"
+      )
+    ]
+    ```
+    
+    Initialize the client:
+    
+    ```swift
+    import Supabase
+    
+    let supabase = SupabaseClient(
+      supabaseURL: URL(string: "your-project-url")!,
+      supabaseKey: "your-anon-key"
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Step 4: Perform CRUD Operations
+
+Now let's interact with our database.
+
+<CodeGroup>
+```typescript JavaScript/TypeScript
+import { supabase } from './lib/supabase'
+
+// Create a todo
+const createTodo = async (title: string, description: string) => {
+  const { data, error } = await supabase
+    .from('todos')
+    .insert({
+      title,
+      description,
+      user_id: (await supabase.auth.getUser()).data.user?.id
+    })
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+// Read todos
+const getTodos = async () => {
+  const { data, error } = await supabase
+    .from('todos')
+    .select('*')
+    .order('created_at', { ascending: false })
+  
+  if (error) throw error
+  return data
+}
+
+// Update a todo
+const updateTodo = async (id: number, is_complete: boolean) => {
+  const { error } = await supabase
+    .from('todos')
+    .update({ is_complete })
+    .eq('id', id)
+  
+  if (error) throw error
+}
+
+// Delete a todo
+const deleteTodo = async (id: number) => {
+  const { error } = await supabase
+    .from('todos')
+    .delete()
+    .eq('id', id)
+  
+  if (error) throw error
+}
+```
+
+```python Python
+from supabase import create_client, Client
+
+supabase: Client = create_client(url, key)
+
+# Create a todo
+def create_todo(title: str, description: str, user_id: str):
+    data = supabase.table('todos').insert({
+        "title": title,
+        "description": description,
+        "user_id": user_id
+    }).execute()
+    return data
+
+# Read todos
+def get_todos():
+    data = supabase.table('todos') \
+        .select('*') \
+        .order('created_at', desc=True) \
+        .execute()
+    return data
+
+# Update a todo
+def update_todo(id: int, is_complete: bool):
+    data = supabase.table('todos') \
+        .update({"is_complete": is_complete}) \
+        .eq('id', id) \
+        .execute()
+    return data
+
+# Delete a todo
+def delete_todo(id: int):
+    data = supabase.table('todos') \
+        .delete() \
+        .eq('id', id) \
+        .execute()
+    return data
+```
+
+```dart Flutter
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+final supabase = Supabase.instance.client;
+
+// Create a todo
+Future<void> createTodo(String title, String description) async {
+  await supabase.from('todos').insert({
+    'title': title,
+    'description': description,
+    'user_id': supabase.auth.currentUser!.id,
+  });
+}
+
+// Read todos
+Future<List<Map<String, dynamic>>> getTodos() async {
+  final response = await supabase
+      .from('todos')
+      .select()
+      .order('created_at', ascending: false);
+  return response as List<Map<String, dynamic>>;
+}
+
+// Update a todo
+Future<void> updateTodo(int id, bool isComplete) async {
+  await supabase
+      .from('todos')
+      .update({'is_complete': isComplete})
+      .eq('id', id);
+}
+
+// Delete a todo
+Future<void> deleteTodo(int id) async {
+  await supabase.from('todos').delete().eq('id', id);
+}
+```
+</CodeGroup>
+
+<Warning>
+These queries will fail until a user is authenticated because of our Row Level Security policies. Let's add authentication next.
+</Warning>
+
+## Step 5: Add Authentication
+
+Supabase provides multiple authentication methods out of the box.
+
+### Email/Password Authentication
+
+<CodeGroup>
+```typescript JavaScript/TypeScript
+import { supabase } from './lib/supabase'
+
+// Sign up
+const signUp = async (email: string, password: string) => {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+  })
+  
+  if (error) throw error
+  return data
+}
+
+// Sign in
+const signIn = async (email: string, password: string) => {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
+  
+  if (error) throw error
+  return data
+}
+
+// Sign out
+const signOut = async () => {
+  const { error } = await supabase.auth.signOut()
+  if (error) throw error
+}
+
+// Get current user
+const getUser = async () => {
+  const { data: { user } } = await supabase.auth.getUser()
+  return user
+}
+
+// Listen to auth changes
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log(event, session)
+  // Update your UI based on auth state
+})
+```
+
+```python Python
+# Sign up
+data = supabase.auth.sign_up({
+    "email": "user@example.com",
+    "password": "secure-password"
+})
+
+# Sign in
+data = supabase.auth.sign_in_with_password({
+    "email": "user@example.com",
+    "password": "secure-password"
+})
+
+# Sign out
+supabase.auth.sign_out()
+
+# Get current user
+user = supabase.auth.get_user()
+```
+
+```dart Flutter
+// Sign up
+final response = await supabase.auth.signUp(
+  email: 'user@example.com',
+  password: 'secure-password',
+);
+
+// Sign in
+final response = await supabase.auth.signInWithPassword(
+  email: 'user@example.com',
+  password: 'secure-password',
+);
+
+// Sign out
+await supabase.auth.signOut();
+
+// Get current user
+final user = supabase.auth.currentUser;
+
+// Listen to auth changes
+supabase.auth.onAuthStateChange.listen((data) {
+  final event = data.event;
+  final session = data.session;
+  // Update your UI
+});
+```
+</CodeGroup>
+
+### Magic Link Authentication
+
+Users can sign in with just their email - no password required:
+
+<CodeGroup>
+```typescript JavaScript/TypeScript
+const signInWithMagicLink = async (email: string) => {
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: 'https://yourapp.com/auth/callback'
+    }
+  })
+  
+  if (error) throw error
+  // User receives email with magic link
+}
+```
+
+```python Python
+data = supabase.auth.sign_in_with_otp({
+    "email": "user@example.com",
+    "options": {
+        "email_redirect_to": "https://yourapp.com/auth/callback"
+    }
+})
+```
+
+```dart Flutter
+await supabase.auth.signInWithOtp(
+  email: 'user@example.com',
+  emailRedirectTo: 'io.supabase.yourapp://login-callback/',
+);
+```
+</CodeGroup>
+
+### Social Authentication
+
+Enable social providers in **Authentication > Providers** in your dashboard:
+
+<CodeGroup>
+```typescript JavaScript/TypeScript
+// Sign in with Google
+const signInWithGoogle = async () => {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: 'https://yourapp.com/auth/callback'
+    }
+  })
+  
+  if (error) throw error
+}
+
+// Also available: github, gitlab, azure, facebook, twitter, discord, and more
+```
+
+```python Python
+# Sign in with GitHub
+data = supabase.auth.sign_in_with_oauth({
+    "provider": "github"
+})
+```
+
+```dart Flutter
+await supabase.auth.signInWithOAuth(
+  OAuthProvider.google,
+  redirectTo: 'io.supabase.yourapp://login-callback/',
+);
+```
+</CodeGroup>
+
+## Step 6: Subscribe to Realtime Changes
+
+Get instant updates when data changes:
+
+<CodeGroup>
+```typescript JavaScript/TypeScript
+// Subscribe to INSERT events
+const subscription = supabase
+  .channel('todos')
+  .on(
+    'postgres_changes',
+    {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'todos'
+    },
+    (payload) => {
+      console.log('New todo created:', payload.new)
+      // Update your UI with the new todo
+    }
+  )
+  .subscribe()
+
+// Subscribe to all changes
+const allChanges = supabase
+  .channel('todos')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'todos'
+    },
+    (payload) => {
+      console.log('Change received:', payload)
+    }
+  )
+  .subscribe()
+
+// Cleanup
+supabase.removeChannel(subscription)
+```
+
+```python Python
+# Subscribe to changes
+def handle_change(payload):
+    print(f"Change received: {payload}")
+
+supabase.channel('todos').on(
+    'postgres_changes',
+    event='*',
+    schema='public',
+    table='todos',
+    callback=handle_change
+).subscribe()
+```
+
+```dart Flutter
+final channel = supabase.channel('todos');
+
+channel
+  .onPostgresChanges(
+    event: PostgresChangeEvent.all,
+    schema: 'public',
+    table: 'todos',
+    callback: (payload) {
+      print('Change received: ${payload.newRecord}');
+      // Update your UI
+    },
+  )
+  .subscribe();
+
+// Cleanup
+await supabase.removeChannel(channel);
+```
+</CodeGroup>
+
+<Tip>
+**Enable Realtime on your table**
+
+Go to **Database > Replication** in your dashboard and enable realtime for the `todos` table.
+</Tip>
+
+## Step 7: Deploy Your Application
+
+### Using Vercel (Recommended for Next.js)
+
+<Steps>
+  <Step title="Install Supabase Integration">
+    1. Go to the [Supabase Vercel Integration](https://vercel.com/integrations/supabase)
+    2. Click **Add Integration**
+    3. Select your Vercel project and Supabase project
+    4. Environment variables are automatically configured
+  </Step>
+  
+  <Step title="Deploy">
+    ```bash
+    git push origin main
+    ```
+    
+    Vercel automatically deploys your application with the correct environment variables.
+  </Step>
+</Steps>
+
+### Manual Deployment
+
+For other platforms:
+
+1. Add environment variables to your hosting platform:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+2. Configure redirect URLs in **Authentication > URL Configuration**:
+   - Add your production URL to **Site URL**
+   - Add redirect URLs to **Redirect URLs**
+
+3. Deploy your application
+
+## Next Steps
+
+Congratulations! You've built a full-stack application with Supabase. Here's what to explore next:
+
+<CardGroup cols={2}>
+  <Card title="Architecture Deep Dive" icon="sitemap" href="/architecture">
+    Learn how all Supabase components work together
+  </Card>
+  
+  <Card title="Storage" icon="folder" href="https://supabase.com/docs/guides/storage">
+    Upload and serve files with automatic optimization
+  </Card>
+  
+  <Card title="Edge Functions" icon="function" href="https://supabase.com/docs/guides/functions">
+    Add custom server-side logic with TypeScript
+  </Card>
+  
+  <Card title="Database Functions" icon="code" href="https://supabase.com/docs/guides/database/functions">
+    Write PostgreSQL functions for complex logic
+  </Card>
+</CardGroup>
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="RLS policies preventing access">
+    If you can't read or write data:
+    
+    1. Verify RLS is enabled: `ALTER TABLE todos ENABLE ROW LEVEL SECURITY;`
+    2. Check your policies match your use case
+    3. Use the **Table Editor** to verify policies are active
+    4. Test with the **SQL Editor** using `SELECT * FROM todos;` while signed in
+  </Accordion>
+  
+  <Accordion title="Environment variables not loading">
+    - Restart your dev server after adding `.env` files
+    - Check the variable naming (e.g., `NEXT_PUBLIC_` prefix for Next.js)
+    - Verify the file is in the correct location (project root)
+    - Don't commit `.env.local` to version control
+  </Accordion>
+  
+  <Accordion title="CORS errors">
+    CORS errors usually mean:
+    
+    - Your site URL isn't configured in **Authentication > URL Configuration**
+    - You're using the wrong URL (check for `http` vs `https`)
+    - Your redirect URL isn't in the allowed list
+  </Accordion>
+  
+  <Accordion title="TypeScript type errors">
+    Generate TypeScript types from your database:
+    
+    ```bash
+    npx supabase gen types typescript --project-id your-project-ref > types/supabase.ts
+    ```
+    
+    Then use them in your client:
+    
+    ```typescript
+    import { Database } from './types/supabase'
+    
+    const supabase = createClient<Database>(url, key)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Resources
+
+- [Full Documentation](https://supabase.com/docs)
+- [API Reference](https://supabase.com/docs/reference/javascript/introduction)
+- [Example Applications](https://github.com/supabase/supabase/tree/master/examples)
+- [YouTube Tutorials](https://www.youtube.com/c/supabase)
+- [Discord Community](https://discord.supabase.com)

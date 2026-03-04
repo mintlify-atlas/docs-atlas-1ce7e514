@@ -1,0 +1,291 @@
+---
+title: 'Vector Embeddings'
+description: 'Generate and store vector embeddings for semantic search and AI applications'
+---
+
+Vector embeddings are numerical representations that capture the semantic meaning of data. Learn how to generate, store, and work with embeddings in Supabase.
+
+## What are Embeddings?
+
+Embeddings convert text, images, or other data into arrays of numbers (vectors) that capture semantic relationships:
+
+```typescript
+// Text: "The cat sat on the mat"
+// Embedding: [0.234, -0.567, 0.123, ..., 0.891]  // 1536 dimensions
+
+// Similar text: "A feline rested on the rug"
+// Embedding: [0.241, -0.554, 0.135, ..., 0.878]  // Very similar vector!
+```
+
+The closer two vectors are in the embedding space, the more semantically similar their source content.
+
+## Generating Embeddings
+
+### OpenAI Embeddings
+
+OpenAI provides state-of-the-art embedding models:
+
+```typescript
+import OpenAI from 'openai'
+import { createClient } from '@supabase/supabase-js'
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+})
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+)
+
+async function generateEmbedding(text: string) {
+  const response = await openai.embeddings.create({
+    model: 'text-embedding-3-small', // 1536 dimensions
+    input: text
+  })
+  
+  return response.data[0].embedding
+}
+
+// Store in Supabase
+const embedding = await generateEmbedding('Your text here')
+await supabase
+  .from('documents')
+  .insert({
+    content: 'Your text here',
+    embedding
+  })
+```
+
+### Available Models
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```typescript
+    // text-embedding-3-small: 1536 dimensions, fast and cheap
+    // text-embedding-3-large: 3072 dimensions, highest quality
+    // text-embedding-ada-002: 1536 dimensions, previous generation
+    
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Anthropic">
+    ```typescript
+    import Anthropic from '@anthropic-ai/sdk'
+    
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY
+    })
+    
+    // Anthropic doesn't provide embeddings directly
+    // Use with Claude for RAG workflows instead
+    ```
+  </Tab>
+  
+  <Tab title="Hugging Face">
+    ```typescript
+    // Use Transformers.js for local embeddings
+    import { pipeline } from '@xenova/transformers'
+    
+    const embedder = await pipeline(
+      'feature-extraction',
+      'Xenova/all-MiniLM-L6-v2'
+    )
+    
+    const output = await embedder(text, {
+      pooling: 'mean',
+      normalize: true
+    })
+    
+    const embedding = Array.from(output.data)
+    ```
+  </Tab>
+</Tabs>
+
+## Storing Embeddings
+
+### Database Schema
+
+Create a table with a vector column:
+
+```sql
+create extension vector;
+
+create table documents (
+  id bigserial primary key,
+  content text,
+  embedding vector(1536), -- dimension matches your model
+  metadata jsonb,
+  created_at timestamptz default now()
+);
+
+-- Create index for fast similarity search
+create index on documents 
+using ivfflat (embedding vector_cosine_ops)
+with (lists = 100);
+```
+
+### Insert Embeddings
+
+```typescript
+interface Document {
+  content: string
+  embedding: number[]
+  metadata?: Record<string, any>
+}
+
+async function insertDocument(doc: Document) {
+  const { data, error } = await supabase
+    .from('documents')
+    .insert({
+      content: doc.content,
+      embedding: doc.embedding,
+      metadata: doc.metadata
+    })
+    .select()
+  
+  return data?.[0]
+}
+```
+
+### Batch Insert
+
+For better performance with many documents:
+
+```typescript
+async function insertBatch(texts: string[]) {
+  // Generate embeddings in parallel
+  const embeddings = await Promise.all(
+    texts.map(text => generateEmbedding(text))
+  )
+  
+  // Prepare documents
+  const documents = texts.map((text, i) => ({
+    content: text,
+    embedding: embeddings[i]
+  }))
+  
+  // Batch insert
+  const { data, error } = await supabase
+    .from('documents')
+    .insert(documents)
+  
+  if (error) throw error
+  return data
+}
+```
+
+## Chunking Strategy
+
+Long documents should be split into chunks before embedding:
+
+```typescript
+function chunkText(text: string, chunkSize: number = 1000, overlap: number = 200) {
+  const chunks: string[] = []
+  let start = 0
+  
+  while (start < text.length) {
+    const end = Math.min(start + chunkSize, text.length)
+    chunks.push(text.slice(start, end))
+    start = end - overlap // Add overlap between chunks
+  }
+  
+  return chunks
+}
+
+async function indexDocument(title: string, content: string) {
+  const chunks = chunkText(content)
+  
+  const documents = await Promise.all(
+    chunks.map(async (chunk, index) => ({
+      content: chunk,
+      embedding: await generateEmbedding(chunk),
+      metadata: {
+        title,
+        chunk_index: index,
+        total_chunks: chunks.length
+      }
+    }))
+  )
+  
+  return await supabase.from('documents').insert(documents)
+}
+```
+
+## Updating Embeddings
+
+When content changes, regenerate embeddings:
+
+```typescript
+async function updateDocument(id: number, newContent: string) {
+  const embedding = await generateEmbedding(newContent)
+  
+  const { data, error } = await supabase
+    .from('documents')
+    .update({
+      content: newContent,
+      embedding
+    })
+    .eq('id', id)
+    .select()
+  
+  return data?.[0]
+}
+```
+
+## Best Practices
+
+<Note>
+  **Embedding Dimensions**: Use the same model and dimension throughout your application. Mixing models will break similarity search.
+</Note>
+
+<Warning>
+  **Storage Costs**: Each 1536-dimensional vector takes ~6KB of storage. Plan accordingly for large datasets.
+</Warning>
+
+<Tip>
+  **Caching**: Cache embeddings to avoid regenerating them. Store the model version in metadata to track when to regenerate.
+</Tip>
+
+### Metadata for Filtering
+
+Store metadata to filter results before similarity search:
+
+```sql
+create table documents (
+  id bigserial primary key,
+  content text,
+  embedding vector(1536),
+  metadata jsonb,
+  
+  -- Extract common fields for indexing
+  document_type text generated always as (metadata->>'type') stored,
+  author text generated always as (metadata->>'author') stored,
+  created_at timestamptz default now()
+);
+
+-- Index for fast filtering
+create index on documents (document_type);
+create index on documents (author);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Similarity Search" href="/ai/similarity-search">
+    Learn how to search using embeddings
+  </Card>
+  <Card title="pgvector Extension" href="/ai/pgvector">
+    Deep dive into pgvector features
+  </Card>
+  <Card title="AI Examples" href="/examples/ai">
+    Complete RAG and search examples
+  </Card>
+  <Card title="Edge Functions" href="/functions/overview">
+    Generate embeddings in Edge Functions
+  </Card>
+</CardGroup>

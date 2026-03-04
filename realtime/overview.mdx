@@ -1,0 +1,186 @@
+---
+title: 'Realtime Overview'
+description: 'Build real-time applications with Supabase Realtime for database changes, broadcast, and presence'
+---
+
+## Introduction
+
+Supabase Realtime enables you to listen to database changes, broadcast messages to connected clients, and track user presence in real-time. Built on PostgreSQL's replication functionality and WebSockets, Realtime provides three core features:
+
+- **Postgres Changes**: Listen to inserts, updates, and deletes in your database
+- **Broadcast**: Send and receive messages between connected clients
+- **Presence**: Track which users are online and their state
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Database Changes" icon="database">
+    Subscribe to real-time changes in your PostgreSQL database tables with Row Level Security support
+  </Card>
+  <Card title="Broadcast" icon="broadcast-tower">
+    Send ephemeral messages between clients without persisting to the database
+  </Card>
+  <Card title="Presence" icon="users">
+    Track online users and synchronize state across clients in real-time
+  </Card>
+  <Card title="Authorization" icon="lock">
+    Secure channels with RLS policies and custom authorization rules
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+### Installation
+
+Install the Supabase JavaScript client:
+
+```bash
+npm install @supabase/supabase-js
+```
+
+### Initialize the Client
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://your-project.supabase.co',
+  'your-anon-key'
+)
+```
+
+### Create a Channel
+
+Channels are the foundation of Realtime. All features work through channels:
+
+```typescript
+const channel = supabase.channel('my-channel')
+
+channel.subscribe((status) => {
+  if (status === 'SUBSCRIBED') {
+    console.log('Connected to channel')
+  }
+})
+```
+
+## Common Use Cases
+
+### Real-time Chat Applications
+
+Build chat applications with message broadcasting and user presence:
+
+```typescript
+const chatChannel = supabase.channel('chat-room')
+
+// Send messages
+chatChannel.send({
+  type: 'broadcast',
+  event: 'message',
+  payload: { text: 'Hello world', user_id: userId }
+})
+
+// Receive messages
+chatChannel.on('broadcast', { event: 'message' }, (payload) => {
+  console.log('New message:', payload)
+})
+```
+
+### Live Dashboards
+
+Update dashboards automatically when data changes:
+
+```typescript
+supabase
+  .channel('analytics')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'metrics' },
+    (payload) => {
+      console.log('Metrics updated:', payload)
+      updateDashboard(payload.new)
+    }
+  )
+  .subscribe()
+```
+
+### Collaborative Tools
+
+Track who's editing documents and sync cursor positions:
+
+```typescript
+const collaborationChannel = supabase.channel('document-123', {
+  config: { presence: { key: userId } }
+})
+
+// Track your presence
+collaborationChannel.track({
+  user: username,
+  cursor: { x: 100, y: 200 }
+})
+
+// Listen to presence changes
+collaborationChannel.on('presence', { event: 'sync' }, () => {
+  const state = collaborationChannel.presenceState()
+  console.log('Online users:', Object.keys(state))
+})
+```
+
+## Performance Considerations
+
+<Note>
+Realtime connections count towards your project's connection limits. Each browser tab or client creates a new connection.
+</Note>
+
+### Connection Management
+
+- Reuse channels when possible instead of creating multiple channels
+- Unsubscribe from channels when no longer needed
+- Use channel multiplexing to combine multiple subscriptions
+
+```typescript
+// Good: One channel, multiple listeners
+const channel = supabase.channel('shared')
+channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'users' }, handler1)
+channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts' }, handler2)
+
+// Cleanup
+channel.unsubscribe()
+```
+
+## Authorization
+
+Secure your real-time channels with Row Level Security (RLS) and custom policies:
+
+```typescript
+// Enable RLS on your table
+supabase.from('messages').insert({ text: 'Hello' })
+
+// Private channels require authentication
+const privateChannel = supabase.channel('private-room', {
+  config: { private: true }
+})
+```
+
+<Tip>
+For private channels, Realtime automatically checks RLS policies before allowing clients to subscribe.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Postgres Changes" icon="database" href="/realtime/postgres-changes">
+    Learn how to listen to database changes in real-time
+  </Card>
+  <Card title="Broadcast" icon="broadcast-tower" href="/realtime/broadcast">
+    Send messages between connected clients
+  </Card>
+  <Card title="Presence" icon="users" href="/realtime/presence">
+    Track online users and synchronize state
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Realtime API Reference](https://supabase.com/docs/reference/javascript/subscribe)
+- [Row Level Security](https://supabase.com/docs/guides/auth/row-level-security)
+- [Client Libraries](https://supabase.com/docs/reference)

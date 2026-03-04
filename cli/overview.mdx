@@ -1,0 +1,226 @@
+---
+title: 'CLI Overview'
+description: 'Develop locally and deploy to production with the Supabase CLI'
+---
+
+The Supabase CLI is a powerful command-line tool that enables you to run the entire Supabase stack locally on your machine or in CI environments. It provides essential tools for local development, database migrations, type generation, and deployment workflows.
+
+## What is the Supabase CLI?
+
+The Supabase CLI allows you to:
+
+- **Run Supabase locally**: Develop your project entirely on your local machine using Docker containers
+- **Manage database migrations**: Track and version your database schema changes with migration files
+- **Generate TypeScript types**: Automatically create type definitions from your database schema
+- **Deploy to production**: Push your local changes to the Supabase Platform
+- **Set up CI/CD workflows**: Integrate Supabase into your automated testing and deployment pipelines
+
+<Note>
+The CLI uses Docker containers to manage the local development stack, so you'll need Docker Desktop or a compatible container runtime installed.
+</Note>
+
+## Key Features
+
+### Local Development Stack
+
+With just two commands, you can set up and start a complete local Supabase environment:
+
+```bash
+supabase init    # Create a new local project
+supabase start   # Launch all Supabase services
+```
+
+This gives you access to:
+
+- **PostgreSQL database**: Full Postgres instance with extensions
+- **Studio**: Web-based database management interface
+- **API Gateway**: Kong-based gateway for REST, Realtime, Storage, and Auth
+- **PostgREST**: Automatic REST API from your database schema
+- **GoTrue**: Authentication and user management
+- **Realtime**: WebSocket-based subscriptions
+- **Storage**: Object storage for files
+- **Mailpit**: Email testing interface for auth emails
+
+### Database Migration Management
+
+The CLI provides a complete migration workflow:
+
+```bash
+# Create a new migration
+supabase migration new create_users_table
+
+# Apply migrations
+supabase migration up
+
+# Generate migration from schema diff
+supabase db diff -f my_changes
+
+# Reset database with migrations
+supabase db reset
+```
+
+<Card title="Learn More" icon="database" href="./migrations">
+  Explore database migration workflows and best practices
+</Card>
+
+### Type Generation
+
+Automatically generate TypeScript types from your database schema:
+
+```bash
+supabase gen types typescript --local > types/supabase.ts
+```
+
+This ensures type safety across your entire application and keeps your types in sync with your database.
+
+### Testing and Linting
+
+The CLI includes tools for testing and linting your database:
+
+```bash
+# Test your database with pgTAP
+supabase test db
+
+# Lint your database for common issues
+supabase db lint
+```
+
+## Quick Start
+
+Get started with the Supabase CLI in minutes:
+
+<Steps>
+  <Step title="Install the CLI">
+    Install the Supabase CLI using your preferred package manager.
+    
+    <CodeGroup>
+    ```bash macOS
+    brew install supabase/tap/supabase
+    ```
+    
+    ```bash Windows
+    scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+    scoop install supabase
+    ```
+    
+    ```bash npm
+    npx supabase --help
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Initialize your project">
+    Create a new Supabase project in your current directory.
+    
+    ```bash
+    supabase init
+    ```
+  </Step>
+  
+  <Step title="Start local services">
+    Launch the entire Supabase stack locally.
+    
+    ```bash
+    supabase start
+    ```
+  </Step>
+</Steps>
+
+<Card title="Installation Guide" icon="download" href="./installation">
+  View detailed installation instructions for all platforms
+</Card>
+
+## Available Services
+
+When you run `supabase start`, you'll see output with URLs and credentials for all services:
+
+```bash
+Started supabase local development setup.
+
+         API URL: http://localhost:54321
+          DB URL: postgresql://postgres:postgres@localhost:54322/postgres
+      Studio URL: http://localhost:54323
+     Mailpit URL: http://localhost:54324
+        anon key: eyJh......
+service_role key: eyJh......
+```
+
+<CardGroup cols={2}>
+  <Card title="Studio" icon="table">
+    Access at `http://localhost:54323` for visual database management
+  </Card>
+  
+  <Card title="API Gateway" icon="network-wired">
+    Access at `http://localhost:54321` for REST, Realtime, Storage, and Auth
+  </Card>
+  
+  <Card title="Database" icon="database">
+    Connect via `postgresql://postgres:postgres@localhost:54322/postgres`
+  </Card>
+  
+  <Card title="Mailpit" icon="envelope">
+    Access at `http://localhost:54324` to test authentication emails
+  </Card>
+</CardGroup>
+
+## Common Commands
+
+Here are the most commonly used CLI commands:
+
+| Command | Description |
+|---------|-------------|
+| `supabase init` | Initialize a new project |
+| `supabase start` | Start local Supabase services |
+| `supabase stop` | Stop local services |
+| `supabase status` | Show status of local services |
+| `supabase migration new <name>` | Create a new migration file |
+| `supabase migration up` | Apply pending migrations |
+| `supabase db diff` | Generate migration from schema changes |
+| `supabase db reset` | Reset database and reapply migrations |
+| `supabase db push` | Push migrations to remote database |
+| `supabase login` | Authenticate with Supabase Platform |
+| `supabase link` | Link to a remote project |
+
+<Tip>
+Use `supabase --help` or `supabase <command> --help` to see all available commands and options.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="./installation">
+    Install the CLI on your platform
+  </Card>
+  
+  <Card title="Local Development" icon="laptop-code" href="./local-development">
+    Set up your local development environment
+  </Card>
+  
+  <Card title="Migrations" icon="database" href="./migrations">
+    Learn how to manage database migrations
+  </Card>
+  
+  <Card title="Deployment" icon="rocket" href="./deployment">
+    Deploy your project to production
+  </Card>
+</CardGroup>
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="CLI Reference" icon="book" href="/api-reference/cli">
+    Complete CLI command reference
+  </Card>
+  
+  <Card title="GitHub Repository" icon="github" href="https://github.com/supabase/cli">
+    View the source code and contribute
+  </Card>
+  
+  <Card title="GitHub Action" icon="github" href="https://github.com/supabase/setup-cli">
+    Integrate with GitHub Actions
+  </Card>
+  
+  <Card title="Community Support" icon="users" href="https://github.com/supabase/supabase/discussions">
+    Get help from the community
+  </Card>
+</CardGroup>

@@ -1,0 +1,458 @@
+---
+title: 'Broadcast'
+description: 'Send ephemeral messages between connected clients with Realtime Broadcast'
+---
+
+## Overview
+
+Broadcast allows you to send low-latency messages between connected clients without storing them in the database. It's perfect for real-time chat, multiplayer games, cursor positions, and any use case where you need fast, ephemeral communication.
+
+<Info>
+Broadcast messages are not persisted. They only exist in memory and are delivered to currently connected clients.
+</Info>
+
+## Key Features
+
+- **Low Latency**: Broadcast has minimal overhead compared to database writes
+- **Ephemeral**: Messages aren't stored, reducing database load
+- **Flexible**: Send any JSON-serializable data
+- **Scalable**: Handles high message volumes efficiently
+
+## Basic Usage
+
+### Send Messages
+
+Send a broadcast message to all clients subscribed to the channel:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://your-project.supabase.co',
+  'your-anon-key'
+)
+
+const channel = supabase.channel('room-1')
+
+// Send a message
+channel.send({
+  type: 'broadcast',
+  event: 'message',
+  payload: { text: 'Hello world!', user: 'alice' }
+})
+
+channel.subscribe()
+```
+
+### Receive Messages
+
+Listen for broadcast messages:
+
+```typescript
+const channel = supabase.channel('room-1')
+
+channel
+  .on('broadcast', { event: 'message' }, (payload) => {
+    console.log('Received:', payload)
+  })
+  .subscribe()
+```
+
+### Complete Chat Example
+
+Here's a real-world chat implementation based on the source examples:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(URL, KEY)
+
+// Setup channel with self-broadcast enabled
+const chatChannel = supabase.channel('chat-room', {
+  config: {
+    broadcast: { self: true } // Receive your own messages
+  }
+})
+
+// Listen for messages
+chatChannel
+  .on('broadcast', { event: 'message' }, ({ payload }) => {
+    const { message, user_id, username } = payload
+    displayMessage(message, user_id, username)
+  })
+  .subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      console.log('Connected to chat')
+    }
+  })
+
+// Send a message
+function sendMessage(text: string) {
+  chatChannel.send({
+    type: 'broadcast',
+    event: 'message',
+    payload: {
+      message: text,
+      user_id: currentUser.id,
+      username: currentUser.name
+    }
+  })
+}
+```
+
+## Advanced Patterns
+
+### Multiple Event Types
+
+Handle different message types in the same channel:
+
+```typescript
+const gameChannel = supabase.channel('game-1')
+
+// Listen to different events
+gameChannel
+  .on('broadcast', { event: 'player-move' }, ({ payload }) => {
+    updatePlayerPosition(payload.playerId, payload.position)
+  })
+  .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
+    displayChatMessage(payload.message)
+  })
+  .on('broadcast', { event: 'game-over' }, ({ payload }) => {
+    showGameOver(payload.winner)
+  })
+  .subscribe()
+
+// Send different event types
+gameChannel.send({
+  type: 'broadcast',
+  event: 'player-move',
+  payload: { playerId: 'p1', position: { x: 100, y: 200 } }
+})
+
+gameChannel.send({
+  type: 'broadcast',
+  event: 'chat-message',
+  payload: { message: 'Good game!' }
+})
+```
+
+### Self-Broadcast Configuration
+
+By default, you don't receive your own messages. Enable self-broadcast to receive them:
+
+```typescript
+// Don't receive own messages (default)
+const channel1 = supabase.channel('room-1')
+
+// Receive own messages
+const channel2 = supabase.channel('room-2', {
+  config: {
+    broadcast: { self: true }
+  }
+})
+```
+
+### Collaborative Cursor Example
+
+Track cursor positions in a collaborative editor:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(URL, KEY)
+const cursorsChannel = supabase.channel('document-cursors')
+
+// Send cursor position updates
+function onMouseMove(event: MouseEvent) {
+  cursorsChannel.send({
+    type: 'broadcast',
+    event: 'cursor-move',
+    payload: {
+      userId: currentUser.id,
+      x: event.clientX,
+      y: event.clientY,
+      timestamp: Date.now()
+    }
+  })
+}
+
+// Throttle updates to avoid flooding
+const throttledMouseMove = throttle(onMouseMove, 50) // Max 20 updates/second
+
+document.addEventListener('mousemove', throttledMouseMove)
+
+// Receive other users' cursor positions
+cursorsChannel
+  .on('broadcast', { event: 'cursor-move' }, ({ payload }) => {
+    if (payload.userId !== currentUser.id) {
+      updateCursor(payload.userId, payload.x, payload.y)
+    }
+  })
+  .subscribe()
+```
+
+## Real-World Example: Authorization Chat
+
+This example is based on the `nextjs-authorization-demo` in the source repository:
+
+```typescript
+'use client'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { RealtimeChannel } from '@supabase/supabase-js'
+import { useState, useEffect } from 'react'
+
+export default function Chat() {
+  const [channel, setChannel] = useState<RealtimeChannel | null>(null)
+  const [selectedRoom, setSelectedRoom] = useState<string | undefined>()
+  const supabase = createClientComponentClient()
+
+  useEffect(() => {
+    if (selectedRoom) {
+      channel?.unsubscribe()
+
+      // Create private channel with broadcast enabled
+      const newChannel = supabase.channel(selectedRoom, {
+        config: {
+          broadcast: { self: true },
+          private: true // Requires authorization
+        }
+      })
+
+      newChannel
+        .on('broadcast', { event: 'message' }, ({ payload }) => {
+          const { message, user_id } = payload
+          displayMessage(message, user_id === currentUserId)
+        })
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            setChannel(newChannel)
+          }
+          if (status === 'CHANNEL_ERROR') {
+            console.error('Failed to subscribe:', err)
+          }
+        })
+    }
+  }, [selectedRoom])
+
+  function sendMessage(text: string) {
+    channel?.send({
+      type: 'broadcast',
+      event: 'message',
+      payload: {
+        message: text,
+        user_id: currentUserId
+      }
+    })
+  }
+
+  return (
+    <div>
+      <div id="chat-messages" />
+      <form onSubmit={(e) => {
+        e.preventDefault()
+        const input = e.target.elements[0] as HTMLInputElement
+        sendMessage(input.value)
+        input.value = ''
+      }}>
+        <input placeholder="Type a message..." />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  )
+}
+```
+
+## Private Channels
+
+Secure your broadcast channels with authorization:
+
+```typescript
+const privateChannel = supabase.channel('private-room', {
+  config: {
+    private: true // Requires authentication and RLS checks
+  }
+})
+
+privateChannel.subscribe(async (status) => {
+  if (status === 'SUBSCRIBED') {
+    console.log('Successfully joined private channel')
+  }
+  if (status === 'CHANNEL_ERROR') {
+    console.log('Not authorized to join this channel')
+  }
+})
+```
+
+<Warning>
+Private channels require users to be authenticated and pass RLS checks defined in your database policies.
+</Warning>
+
+## Performance Optimization
+
+### Throttle High-Frequency Updates
+
+Avoid overwhelming clients with too many messages:
+
+```typescript
+import { throttle } from 'lodash'
+
+// Limit to 20 updates per second
+const broadcastUpdate = throttle((data) => {
+  channel.send({
+    type: 'broadcast',
+    event: 'update',
+    payload: data
+  })
+}, 50)
+
+// Use throttled function
+broadcastUpdate({ x: mouseX, y: mouseY })
+```
+
+### Batch Related Updates
+
+Combine multiple updates into one message:
+
+```typescript
+// Instead of sending 3 separate messages:
+channel.send({ type: 'broadcast', event: 'name', payload: { name: 'Alice' } })
+channel.send({ type: 'broadcast', event: 'status', payload: { status: 'online' } })
+channel.send({ type: 'broadcast', event: 'avatar', payload: { avatar: 'url' } })
+
+// Send one message with all data:
+channel.send({
+  type: 'broadcast',
+  event: 'user-update',
+  payload: {
+    name: 'Alice',
+    status: 'online',
+    avatar: 'url'
+  }
+})
+```
+
+### Message Size Limits
+
+<Note>
+Keep broadcast messages small (< 100KB). Large messages increase latency and network usage.
+</Note>
+
+```typescript
+// Good: Small, focused messages
+channel.send({
+  type: 'broadcast',
+  event: 'typing',
+  payload: { userId: '123', isTyping: true }
+})
+
+// Avoid: Large payloads
+channel.send({
+  type: 'broadcast',
+  event: 'data',
+  payload: { hugeArray: [...10000items] } // Too large!
+})
+```
+
+## Combining with Other Features
+
+### Broadcast + Presence
+
+Use broadcast for messages and presence for online status:
+
+```typescript
+const channel = supabase.channel('multiplayer-game', {
+  config: {
+    presence: { key: playerId },
+    broadcast: { self: true }
+  }
+})
+
+// Track presence
+channel.track({ username: 'alice', level: 5 })
+
+// Send game events
+channel.send({
+  type: 'broadcast',
+  event: 'attack',
+  payload: { target: 'enemy-1', damage: 50 }
+})
+
+// Listen for everything
+channel
+  .on('presence', { event: 'join' }, ({ newPresences }) => {
+    console.log('Players joined:', newPresences)
+  })
+  .on('broadcast', { event: 'attack' }, ({ payload }) => {
+    processAttack(payload)
+  })
+  .subscribe()
+```
+
+### Broadcast + Postgres Changes
+
+Persist important messages, use broadcast for ephemeral ones:
+
+```typescript
+const channel = supabase.channel('chat')
+
+// Listen to persisted messages from database
+channel.on(
+  'postgres_changes',
+  { event: 'INSERT', schema: 'public', table: 'messages' },
+  ({ new: message }) => {
+    displayPersistedMessage(message)
+  }
+)
+
+// Listen to ephemeral typing indicators
+channel.on('broadcast', { event: 'typing' }, ({ payload }) => {
+  showTypingIndicator(payload.userId)
+})
+
+channel.subscribe()
+
+// Send persisted message
+await supabase.from('messages').insert({ text: 'Important message' })
+
+// Send ephemeral typing indicator
+channel.send({
+  type: 'broadcast',
+  event: 'typing',
+  payload: { userId: currentUser.id }
+})
+```
+
+## Error Handling
+
+```typescript
+const channel = supabase.channel('chat')
+
+channel.subscribe((status, err) => {
+  switch (status) {
+    case 'SUBSCRIBED':
+      console.log('Connected successfully')
+      break
+    case 'CHANNEL_ERROR':
+      console.error('Failed to subscribe:', err)
+      // Retry logic here
+      break
+    case 'TIMED_OUT':
+      console.error('Connection timed out')
+      break
+    case 'CLOSED':
+      console.log('Channel closed')
+      break
+  }
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Presence" icon="users" href="/realtime/presence">
+    Track online users and synchronize state
+  </Card>
+  <Card title="Postgres Changes" icon="database" href="/realtime/postgres-changes">
+    Listen to database changes in real-time
+  </Card>
+</CardGroup>

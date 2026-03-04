@@ -1,0 +1,415 @@
+---
+title: 'Edge Functions Overview'
+description: 'Run server-side code globally at the edge with Supabase Edge Functions'
+---
+
+## Introduction
+
+Supabase Edge Functions are server-side TypeScript functions that run on Deno, distributed globally at the edge for low latency. They're perfect for custom business logic, third-party API integrations, and any server-side processing you need.
+
+<Info>
+Edge Functions run on [Deno Deploy](https://deno.com/deploy), providing a fast, secure runtime with global distribution.
+</Info>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="TypeScript Native" icon="code">
+    Write functions in TypeScript with full type safety and modern JavaScript features
+  </Card>
+  <Card title="Global Distribution" icon="globe">
+    Functions run on edge servers worldwide for minimal latency
+  </Card>
+  <Card title="Secure by Default" icon="shield">
+    Automatic JWT verification and built-in authentication context
+  </Card>
+  <Card title="Seamless Integration" icon="plug">
+    Direct access to your Supabase database, auth, and storage
+  </Card>
+</CardGroup>
+
+## What You Can Build
+
+### API Integrations
+
+Connect to third-party services:
+
+- **Payment processing**: Stripe, PayPal webhooks
+- **Email sending**: Resend, SendGrid, Mailgun
+- **AI services**: OpenAI, Anthropic, HuggingFace
+- **Social platforms**: Twitter, Discord, Slack bots
+
+### Custom Business Logic
+
+- Complex calculations and data transformations
+- Batch processing and scheduled jobs
+- Custom authentication flows
+- PDF generation and image processing
+
+### Database Operations
+
+- Complex queries with RLS enforcement
+- Data validation and sanitization
+- Aggregations and analytics
+- Database triggers and webhooks
+
+## Quick Start
+
+### Create Your First Function
+
+```typescript
+// supabase/functions/hello-world/index.ts
+Deno.serve(async (req) => {
+  const { name } = await req.json()
+  
+  const data = {
+    message: `Hello ${name}!`
+  }
+
+  return new Response(
+    JSON.stringify(data),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+### Deploy the Function
+
+```bash
+# Login to Supabase CLI
+supabase login
+
+# Link your project
+supabase link --project-ref your-project-ref
+
+# Deploy the function
+supabase functions deploy hello-world
+```
+
+### Invoke the Function
+
+From your client application:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://your-project.supabase.co',
+  'your-anon-key'
+)
+
+const { data, error } = await supabase.functions.invoke('hello-world', {
+  body: { name: 'Alice' }
+})
+
+console.log(data) // { message: 'Hello Alice!' }
+```
+
+Or with curl:
+
+```bash
+curl -L -X POST 'https://your-project.supabase.co/functions/v1/hello-world' \
+  -H 'Authorization: Bearer YOUR_ANON_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Alice"}'
+```
+
+## Real-World Examples
+
+### Stripe Webhook Handler
+
+Process Stripe webhooks securely:
+
+```typescript
+// supabase/functions/stripe-webhooks/index.ts
+import Stripe from 'https://esm.sh/stripe@14?target=denonext'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_API_KEY') as string, {
+  apiVersion: '2024-11-20'
+})
+
+const cryptoProvider = Stripe.createSubtleCryptoProvider()
+
+Deno.serve(async (request) => {
+  const signature = request.headers.get('Stripe-Signature')
+  const body = await request.text()
+  
+  let event
+  try {
+    event = await stripe.webhooks.constructEventAsync(
+      body,
+      signature!,
+      Deno.env.get('STRIPE_WEBHOOK_SIGNING_SECRET')!,
+      undefined,
+      cryptoProvider
+    )
+  } catch (err) {
+    return new Response(err.message, { status: 400 })
+  }
+  
+  console.log(`Event received: ${event.id}`)
+  
+  // Process the event
+  switch (event.type) {
+    case 'payment_intent.succeeded':
+      // Handle successful payment
+      break
+    case 'customer.subscription.created':
+      // Handle new subscription
+      break
+  }
+  
+  return new Response(JSON.stringify({ ok: true }), { status: 200 })
+})
+```
+
+### OpenAI Integration
+
+Stream completions from OpenAI:
+
+```typescript
+// supabase/functions/openai/index.ts
+import 'https://deno.land/x/xhr@0.3.0/mod.ts'
+import { CreateCompletionRequest } from 'https://esm.sh/openai@3.1.0'
+
+Deno.serve(async (req) => {
+  const { query } = await req.json()
+
+  const completionConfig: CreateCompletionRequest = {
+    model: 'text-davinci-003',
+    prompt: query,
+    max_tokens: 256,
+    temperature: 0,
+    stream: true
+  }
+
+  return fetch('https://api.openai.com/v1/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(completionConfig)
+  })
+})
+```
+
+### RESTful API with Database Access
+
+Create a full REST API with RLS:
+
+```typescript
+// supabase/functions/restful-tasks/index.ts
+import { createClient } from 'npm:supabase-js@2'
+import { corsHeaders } from 'jsr:@supabase/supabase-js@2/cors'
+
+Deno.serve(async (req) => {
+  const { url, method } = req
+
+  // Handle CORS
+  if (method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    // Create client with user's auth context
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: {
+          headers: { Authorization: req.headers.get('Authorization')! }
+        }
+      }
+    )
+
+    // Parse URL pattern
+    const taskPattern = new URLPattern({ pathname: '/restful-tasks/:id' })
+    const matchingPath = taskPattern.exec(url)
+    const id = matchingPath?.pathname.groups.id
+
+    // Handle different HTTP methods
+    switch (true) {
+      case id && method === 'GET':
+        const { data: task } = await supabaseClient
+          .from('tasks')
+          .select('*')
+          .eq('id', id)
+          .single()
+        return new Response(JSON.stringify({ task }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+        
+      case method === 'POST':
+        const { task: newTask } = await req.json()
+        await supabaseClient.from('tasks').insert(newTask)
+        return new Response(JSON.stringify({ task: newTask }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+        
+      default:
+        return new Response('Not found', { status: 404 })
+    }
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400
+    })
+  }
+})
+```
+
+## Core Concepts
+
+### Deno Runtime
+
+Edge Functions run on Deno, which provides:
+
+- **TypeScript native**: No build step required
+- **Secure by default**: Explicit permissions for file, network, and environment access
+- **Web standard APIs**: Fetch, Request, Response, URL, etc.
+- **NPM and Deno modules**: Import from both ecosystems
+
+```typescript
+// Import from Deno
+import { serve } from 'https://deno.land/std@0.170.0/http/server.ts'
+
+// Import from NPM
+import { createClient } from 'npm:supabase-js@2'
+
+// Import from JSR
+import { corsHeaders } from 'jsr:@supabase/supabase-js@2/cors'
+```
+
+### Environment Variables
+
+Access secrets and configuration:
+
+```typescript
+const apiKey = Deno.env.get('OPENAI_API_KEY')
+const supabaseUrl = Deno.env.get('SUPABASE_URL') // Auto-provided
+const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY') // Auto-provided
+```
+
+### Authentication Context
+
+Access the authenticated user:
+
+```typescript
+import { createClient } from 'npm:supabase-js@2'
+
+Deno.serve(async (req) => {
+  const supabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    {
+      global: {
+        headers: { Authorization: req.headers.get('Authorization')! }
+      }
+    }
+  )
+
+  // Get the authenticated user
+  const { data: { user } } = await supabaseClient.auth.getUser()
+  
+  if (!user) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+  
+  // User is authenticated, proceed with logic
+  return new Response(JSON.stringify({ userId: user.id }))
+})
+```
+
+## Best Practices
+
+### Error Handling
+
+Always handle errors gracefully:
+
+```typescript
+Deno.serve(async (req) => {
+  try {
+    const data = await processRequest(req)
+    return new Response(JSON.stringify(data), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('Error:', error)
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    )
+  }
+})
+```
+
+### CORS Configuration
+
+Handle browser requests properly:
+
+```typescript
+import { corsHeaders } from 'jsr:@supabase/supabase-js@2/cors'
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  return new Response(JSON.stringify({ data: 'response' }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  })
+})
+```
+
+### Performance Optimization
+
+- **Minimize cold starts**: Keep functions small and focused
+- **Cache expensive operations**: Use in-memory caching for repeated requests
+- **Stream large responses**: Use streaming for large data
+- **Parallel processing**: Use Promise.all for independent operations
+
+## Limits and Pricing
+
+<Note>
+Check your project's Edge Functions limits in the Supabase Dashboard under Settings > Usage.
+</Note>
+
+### Common Limits
+
+- **Execution time**: 150 seconds max (Pro plan), 10 seconds (Free plan)
+- **Memory**: 512 MB per function
+- **Request size**: 10 MB max
+- **Response size**: 10 MB max
+
+### Billing
+
+- Free tier: 500K function invocations/month
+- Pro plan: 2M invocations/month included
+- Additional: $2 per 1M invocations
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/functions/quickstart">
+    Build and deploy your first Edge Function
+  </Card>
+  <Card title="Deploy Functions" icon="upload" href="/functions/deploy">
+    Learn deployment strategies and CI/CD
+  </Card>
+  <Card title="Environment Variables" icon="key" href="/functions/environment-variables">
+    Manage secrets and configuration
+  </Card>
+  <Card title="Debugging" icon="bug" href="/functions/debugging">
+    Debug and monitor your functions
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Edge Functions Examples](https://github.com/supabase/supabase/tree/master/examples/edge-functions)
+- [Deno Documentation](https://deno.land/manual)
+- [Supabase CLI Reference](https://supabase.com/docs/reference/cli)

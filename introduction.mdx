@@ -1,0 +1,284 @@
+---
+title: 'Introduction to Supabase'
+description: 'The open source Firebase alternative built on PostgreSQL'
+---
+
+<img
+  className="block dark:hidden"
+  src="https://user-images.githubusercontent.com/8291514/213727234-cda046d6-28c6-491a-b284-b86c5cede25d.png"
+  alt="Supabase Logo Light"
+/>
+<img
+  className="hidden dark:block"
+  src="https://user-images.githubusercontent.com/8291514/213727225-56186826-bee8-43b5-9b15-86e39d89393.png"
+  alt="Supabase Logo Dark"
+/>
+
+## What is Supabase?
+
+Supabase is the **Postgres development platform** that provides everything you need to build production-grade applications. We're building the features of Firebase using enterprise-grade, open source tools.
+
+Instead of vendor lock-in, you get:
+- Full control over your data with PostgreSQL
+- Open source tools with active communities
+- The ability to self-host or use our managed platform
+- Enterprise-grade security and performance
+
+<Note>
+Supabase is not a 1-to-1 mapping of Firebase. Our aim is to give developers a Firebase-like developer experience using open source tools.
+</Note>
+
+## Core Features
+
+Supabase provides a complete backend solution with the following features:
+
+<CardGroup cols={2}>
+  <Card title="Database" icon="database" href="https://supabase.com/docs/guides/database">
+    Hosted PostgreSQL database with full SQL access, extensions, and real-time capabilities
+  </Card>
+  
+  <Card title="Authentication" icon="lock" href="https://supabase.com/docs/guides/auth">
+    JWT-based authentication with social providers, magic links, and fine-grained access control
+  </Card>
+  
+  <Card title="Auto-generated APIs" icon="code">
+    RESTful and GraphQL APIs generated automatically from your database schema
+  </Card>
+  
+  <Card title="Realtime" icon="bolt" href="https://supabase.com/docs/guides/realtime">
+    Subscribe to database changes via WebSockets and broadcast events between clients
+  </Card>
+  
+  <Card title="Storage" icon="folder" href="https://supabase.com/docs/guides/storage">
+    Store and serve files with automatic image optimization and CDN delivery
+  </Card>
+  
+  <Card title="Edge Functions" icon="function" href="https://supabase.com/docs/guides/functions">
+    Deploy serverless TypeScript functions to the edge with Deno runtime
+  </Card>
+  
+  <Card title="AI & Vectors" icon="brain" href="https://supabase.com/docs/guides/ai">
+    Built-in support for vector embeddings and AI-powered applications
+  </Card>
+  
+  <Card title="Dashboard" icon="chart-line">
+    Intuitive web interface to manage your database, auth, storage, and more
+  </Card>
+</CardGroup>
+
+## Why Supabase?
+
+### Built on Open Source
+
+Supabase is a combination of enterprise-grade open source tools:
+
+- **[PostgreSQL](https://www.postgresql.org/)** - The world's most advanced open source database with 30+ years of development
+- **[PostgREST](http://postgrest.org/)** - Turns your database into a RESTful API automatically
+- **[GoTrue](https://github.com/supabase/gotrue)** - JWT-based authentication and user management
+- **[Realtime](https://github.com/supabase/realtime)** - Elixir server for broadcasting database changes over WebSockets
+- **[Storage API](https://github.com/supabase/storage-api)** - S3-compatible object storage with PostgreSQL permissions
+- **[pg_graphql](http://github.com/supabase/pg_graphql/)** - PostgreSQL extension for GraphQL support
+- **[Kong](https://github.com/Kong/kong)** - Cloud-native API gateway
+
+<Tip>
+If the tools and communities exist with an MIT, Apache 2, or equivalent open license, we use and support that tool. If the tool doesn't exist, we build and open source it ourselves.
+</Tip>
+
+### Flexible Deployment Options
+
+Choose the deployment model that fits your needs:
+
+<Tabs>
+  <Tab title="Hosted Platform">
+    Sign up at [supabase.com/dashboard](https://supabase.com/dashboard) and start building immediately:
+    
+    - No infrastructure to manage
+    - Automatic scaling and backups
+    - Built-in monitoring and analytics
+    - Global CDN for low-latency access
+    - Free tier for development and small projects
+    
+    Perfect for getting started quickly or running production applications without operational overhead.
+  </Tab>
+  
+  <Tab title="Self-Hosted">
+    Deploy Supabase on your own infrastructure using Docker:
+    
+    ```bash
+    git clone https://github.com/supabase/supabase
+    cd supabase/docker
+    cp .env.example .env
+    docker compose up
+    ```
+    
+    Benefits:
+    - Complete control over your data and infrastructure
+    - No vendor lock-in
+    - Ability to customize and extend
+    - Deploy on-premises or any cloud provider
+    
+    Learn more in the [Self-Hosting Guide](https://supabase.com/docs/guides/hosting/overview).
+  </Tab>
+  
+  <Tab title="Local Development">
+    Develop locally with the Supabase CLI:
+    
+    ```bash
+    npx supabase init
+    npx supabase start
+    ```
+    
+    Features:
+    - Complete local environment with all services
+    - Database migrations and version control
+    - Type generation for TypeScript
+    - Test and develop offline
+    
+    See [Local Development Guide](https://supabase.com/docs/guides/local-development).
+  </Tab>
+</Tabs>
+
+## Developer Experience
+
+Supabase is designed to make developers productive:
+
+### Type-Safe Client Libraries
+
+Official client libraries with full TypeScript support:
+
+<CodeGroup>
+```typescript JavaScript/TypeScript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://your-project.supabase.co',
+  'your-anon-key'
+)
+
+// Fully typed queries
+const { data, error } = await supabase
+  .from('users')
+  .select('id, name, email')
+  .eq('status', 'active')
+```
+
+```python Python
+from supabase import create_client, Client
+
+supabase: Client = create_client(
+    "https://your-project.supabase.co",
+    "your-anon-key"
+)
+
+# Simple and intuitive API
+response = supabase.table('users') \
+    .select('id, name, email') \
+    .eq('status', 'active') \
+    .execute()
+```
+
+```swift Swift
+import Supabase
+
+let supabase = SupabaseClient(
+    supabaseURL: URL(string: "https://your-project.supabase.co")!,
+    supabaseKey: "your-anon-key"
+)
+
+// Native Swift experience
+let users: [User] = try await supabase
+    .from("users")
+    .select()
+    .eq("status", value: "active")
+    .execute()
+    .value
+```
+
+```dart Flutter
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+await Supabase.initialize(
+  url: 'https://your-project.supabase.co',
+  anonKey: 'your-anon-key',
+);
+
+final supabase = Supabase.instance.client;
+
+// Flutter-optimized
+final users = await supabase
+    .from('users')
+    .select()
+    .eq('status', 'active');
+```
+</CodeGroup>
+
+### Row Level Security
+
+PostgreSQL's Row Level Security (RLS) provides fine-grained authorization:
+
+```sql
+-- Users can only see their own data
+CREATE POLICY "Users can view own data" ON profiles
+  FOR SELECT
+  USING (auth.uid() = id);
+
+-- Users can update their own profile
+CREATE POLICY "Users can update own profile" ON profiles
+  FOR UPDATE
+  USING (auth.uid() = id);
+```
+
+Policies are enforced at the database level, so your data is secure even if your application code has vulnerabilities.
+
+<Warning>
+Always enable Row Level Security on tables containing user data. Without RLS policies, data is inaccessible by default when using the API.
+</Warning>
+
+## Use Cases
+
+Supabase powers applications across industries:
+
+- **SaaS Applications** - Full-featured backends with auth, database, and realtime
+- **Mobile Apps** - Cross-platform support with Flutter, Swift, and React Native
+- **AI Applications** - Vector embeddings and similarity search built-in
+- **Real-time Apps** - Chat, collaboration tools, live dashboards
+- **E-commerce** - Product catalogs, user management, and order processing
+- **Internal Tools** - Admin panels, dashboards, and business applications
+
+## Getting Started
+
+Ready to build with Supabase? Continue to the [Quickstart](/quickstart) to create your first project and run your first query in minutes.
+
+## Community & Support
+
+Join thousands of developers building with Supabase:
+
+<CardGroup cols={2}>
+  <Card title="Discord" icon="discord" href="https://discord.supabase.com">
+    Join our community of 20,000+ developers for real-time help and discussions
+  </Card>
+  
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/supabase/supabase/discussions">
+    Share ideas, ask questions, and help shape the future of Supabase
+  </Card>
+  
+  <Card title="GitHub Issues" icon="bug" href="https://github.com/supabase/supabase/issues">
+    Report bugs and track development progress
+  </Card>
+  
+  <Card title="Twitter/X" icon="x-twitter" href="https://twitter.com/supabase">
+    Follow us for updates, tips, and community highlights
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first app with Supabase in under 10 minutes
+  </Card>
+  
+  <Card title="Architecture" icon="sitemap" href="/architecture">
+    Learn how Supabase components work together
+  </Card>
+</CardGroup>

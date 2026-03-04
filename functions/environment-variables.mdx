@@ -1,0 +1,592 @@
+---
+title: 'Environment Variables'
+description: 'Manage secrets and configuration for Edge Functions with environment variables'
+---
+
+## Overview
+
+Environment variables allow you to store secrets, API keys, and configuration outside your code. Supabase provides both built-in environment variables and custom secrets management.
+
+<Warning>
+Never commit secrets to version control. Always use environment variables for sensitive data.
+</Warning>
+
+## Built-in Environment Variables
+
+Supabase automatically provides these environment variables to all functions:
+
+| Variable | Description | Example |
+|----------|-------------|----------|
+| `SUPABASE_URL` | Your project's API URL | `https://xxx.supabase.co` |
+| `SUPABASE_ANON_KEY` | Your project's anon key | `eyJhbGc...` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (use with caution) | `eyJhbGc...` |
+| `SUPABASE_DB_URL` | PostgreSQL connection string | `postgresql://...` |
+
+### Access Built-in Variables
+
+```typescript
+Deno.serve(async (req) => {
+  // Access built-in variables
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')
+  
+  console.log('Project URL:', supabaseUrl)
+  
+  return new Response('OK')
+})
+```
+
+<Info>
+Built-in variables are automatically configured and don't need to be set manually.
+</Info>
+
+## Custom Environment Variables
+
+### Set Secrets
+
+Set custom secrets using the CLI:
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-proj-xxx
+```
+
+Set multiple secrets:
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-proj-xxx STRIPE_SECRET=sk_test_xxx
+```
+
+### Set from File
+
+Set multiple secrets from a file:
+
+```bash
+# Create secrets file
+cat > .env.production << EOF
+OPENAI_API_KEY=sk-proj-xxx
+STRIPE_SECRET=sk_test_xxx
+RESEND_API_KEY=re_xxx
+EOF
+
+# Set all secrets at once
+supabase secrets set --env-file .env.production
+```
+
+<Warning>
+Don't commit `.env.production` or any secrets file to git. Add them to `.gitignore`.
+</Warning>
+
+### List Secrets
+
+View all configured secrets (values are hidden):
+
+```bash
+supabase secrets list
+```
+
+Output:
+
+```
+Name                         Value (truncated)
+OPENAI_API_KEY              sk-proj-***
+STRIPE_SECRET               sk_test_***
+RESEND_API_KEY              re_***
+SUPABASE_URL                https://***
+SUPABASE_ANON_KEY           eyJh***
+```
+
+### Unset Secrets
+
+Remove a secret:
+
+```bash
+supabase secrets unset OPENAI_API_KEY
+```
+
+## Using Environment Variables
+
+### In Your Functions
+
+Access environment variables with `Deno.env.get()`:
+
+```typescript
+Deno.serve(async (req) => {
+  // Get environment variable
+  const apiKey = Deno.env.get('OPENAI_API_KEY')
+  
+  if (!apiKey) {
+    return new Response(
+      JSON.stringify({ error: 'OPENAI_API_KEY not configured' }),
+      { status: 500 }
+    )
+  }
+  
+  // Use the API key
+  const response = await fetch('https://api.openai.com/v1/completions', {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    method: 'POST',
+    body: JSON.stringify({ prompt: 'Hello' })
+  })
+  
+  const data = await response.json()
+  return new Response(JSON.stringify(data))
+})
+```
+
+### With Type Safety
+
+Create a helper for type-safe environment variables:
+
+```typescript
+// supabase/functions/_shared/env.ts
+export function getEnv(key: string): string {
+  const value = Deno.env.get(key)
+  
+  if (!value) {
+    throw new Error(`Environment variable ${key} is not set`)
+  }
+  
+  return value
+}
+
+export function getOptionalEnv(key: string, defaultValue: string): string {
+  return Deno.env.get(key) ?? defaultValue
+}
+```
+
+Use in your function:
+
+```typescript
+import { getEnv, getOptionalEnv } from '../_shared/env.ts'
+
+Deno.serve(async (req) => {
+  // Will throw if not set
+  const apiKey = getEnv('OPENAI_API_KEY')
+  
+  // Optional with default
+  const model = getOptionalEnv('OPENAI_MODEL', 'gpt-3.5-turbo')
+  
+  // Use variables
+  console.log('Using model:', model)
+})
+```
+
+## Local Development
+
+### Create Local Environment File
+
+Create `.env.local` for local development:
+
+```bash
+# supabase/.env.local
+OPENAI_API_KEY=sk-proj-xxx
+STRIPE_SECRET=sk_test_xxx
+RESEND_API_KEY=re_xxx
+```
+
+Add to `.gitignore`:
+
+```bash
+echo "supabase/.env.local" >> .gitignore
+```
+
+### Use Local Environment Variables
+
+Serve functions with local environment:
+
+```bash
+supabase functions serve --env-file ./supabase/.env.local
+```
+
+Or for all commands:
+
+```bash
+supabase start --env-file ./supabase/.env.local
+```
+
+### Example Local Setup
+
+Create a complete local environment:
+
+```bash
+# Copy example to actual file
+cp supabase/.env.example supabase/.env.local
+
+# Edit with your local secrets
+vim supabase/.env.local
+
+# Start services
+supabase start
+
+# Serve function with local env
+supabase functions serve --env-file ./supabase/.env.local
+```
+
+## Real-World Examples
+
+### OpenAI Integration
+
+Securely use OpenAI API:
+
+```typescript
+Deno.serve(async (req) => {
+  const apiKey = Deno.env.get('OPENAI_API_KEY')
+  
+  if (!apiKey) {
+    return new Response(
+      JSON.stringify({ error: 'OpenAI API key not configured' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
+  const { prompt } = await req.json()
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: prompt }]
+    })
+  })
+
+  const data = await response.json()
+  return new Response(JSON.stringify(data), {
+    headers: { 'Content-Type': 'application/json' }
+  })
+})
+```
+
+Set the secret:
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-proj-xxx
+```
+
+### Stripe Webhooks
+
+Verify Stripe webhook signatures:
+
+```typescript
+import Stripe from 'https://esm.sh/stripe@14?target=denonext'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_API_KEY') as string, {
+  apiVersion: '2024-11-20'
+})
+
+const cryptoProvider = Stripe.createSubtleCryptoProvider()
+
+Deno.serve(async (request) => {
+  const signature = request.headers.get('Stripe-Signature')
+  const body = await request.text()
+  
+  try {
+    const event = await stripe.webhooks.constructEventAsync(
+      body,
+      signature!,
+      Deno.env.get('STRIPE_WEBHOOK_SIGNING_SECRET')!,
+      undefined,
+      cryptoProvider
+    )
+    
+    console.log(`Event received: ${event.id}`)
+    
+    // Process event
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err)
+    return new Response(err.message, { status: 400 })
+  }
+})
+```
+
+Set secrets:
+
+```bash
+supabase secrets set STRIPE_API_KEY=sk_test_xxx
+supabase secrets set STRIPE_WEBHOOK_SIGNING_SECRET=whsec_xxx
+```
+
+### Email with Resend
+
+Send emails securely:
+
+```typescript
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+
+Deno.serve(async (req) => {
+  if (!RESEND_API_KEY) {
+    return new Response('RESEND_API_KEY not configured', { status: 500 })
+  }
+
+  const { to, subject, html } = await req.json()
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${RESEND_API_KEY}`
+    },
+    body: JSON.stringify({
+      from: 'noreply@yourdomain.com',
+      to,
+      subject,
+      html
+    })
+  })
+
+  const data = await response.json()
+  return new Response(JSON.stringify(data), {
+    headers: { 'Content-Type': 'application/json' }
+  })
+})
+```
+
+### Database Connection
+
+Connect directly to PostgreSQL:
+
+```typescript
+import { Pool } from 'https://deno.land/x/postgres@v0.17.0/mod.ts'
+
+const pool = new Pool(
+  {
+    tls: { enabled: false },
+    database: 'postgres',
+    hostname: Deno.env.get('DB_HOSTNAME'),
+    user: Deno.env.get('DB_USER'),
+    port: 6543,
+    password: Deno.env.get('DB_PASSWORD')
+  },
+  1
+)
+
+Deno.serve(async (_req) => {
+  try {
+    const connection = await pool.connect()
+
+    try {
+      const result = await connection.queryObject`SELECT * FROM animals`
+      const animals = result.rows
+
+      return new Response(JSON.stringify(animals, null, 2), {
+        headers: { 'Content-Type': 'application/json' }
+      })
+    } finally {
+      connection.release()
+    }
+  } catch (err) {
+    console.error(err)
+    return new Response(String(err?.message ?? err), { status: 500 })
+  }
+})
+```
+
+## CI/CD Integration
+
+### GitHub Actions
+
+Set secrets in GitHub Actions:
+
+```yaml
+name: Deploy Functions
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Set secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase secrets set OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" --project-ref ${{ secrets.PROJECT_ID }}
+          supabase secrets set STRIPE_SECRET="${{ secrets.STRIPE_SECRET }}" --project-ref ${{ secrets.PROJECT_ID }}
+
+      - name: Deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy --project-ref ${{ secrets.PROJECT_ID }}
+```
+
+Configure GitHub secrets:
+
+1. Go to Settings > Secrets and variables > Actions
+2. Add each secret:
+   - `SUPABASE_ACCESS_TOKEN`
+   - `PROJECT_ID`
+   - `OPENAI_API_KEY`
+   - `STRIPE_SECRET`
+
+### Environment-Specific Secrets
+
+Use different secrets for staging and production:
+
+```yaml
+- name: Deploy to staging
+  if: github.ref == 'refs/heads/staging'
+  run: |
+    supabase secrets set OPENAI_API_KEY="${{ secrets.STAGING_OPENAI_KEY }}" --project-ref ${{ secrets.STAGING_PROJECT_ID }}
+    supabase functions deploy --project-ref ${{ secrets.STAGING_PROJECT_ID }}
+
+- name: Deploy to production
+  if: github.ref == 'refs/heads/main'
+  run: |
+    supabase secrets set OPENAI_API_KEY="${{ secrets.PROD_OPENAI_KEY }}" --project-ref ${{ secrets.PROD_PROJECT_ID }}
+    supabase functions deploy --project-ref ${{ secrets.PROD_PROJECT_ID }}
+```
+
+## Best Practices
+
+### Never Hardcode Secrets
+
+<CodeGroup>
+
+```typescript ❌ Bad
+// Don't do this!
+const apiKey = 'sk-proj-1234567890abcdef'
+
+fetch('https://api.openai.com/v1/chat/completions', {
+  headers: { 'Authorization': `Bearer ${apiKey}` }
+})
+```
+
+```typescript ✅ Good
+// Always use environment variables
+const apiKey = Deno.env.get('OPENAI_API_KEY')
+
+if (!apiKey) {
+  throw new Error('OPENAI_API_KEY not configured')
+}
+
+fetch('https://api.openai.com/v1/chat/completions', {
+  headers: { 'Authorization': `Bearer ${apiKey}` }
+})
+```
+
+</CodeGroup>
+
+### Validate Environment Variables
+
+Check variables at startup:
+
+```typescript
+const REQUIRED_ENV_VARS = [
+  'OPENAI_API_KEY',
+  'STRIPE_SECRET',
+  'RESEND_API_KEY'
+]
+
+function validateEnv() {
+  const missing = REQUIRED_ENV_VARS.filter(key => !Deno.env.get(key))
+  
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required environment variables: ${missing.join(', ')}`
+    )
+  }
+}
+
+validateEnv()
+
+Deno.serve(async (req) => {
+  // All required variables are set
+})
+```
+
+### Use .env.example
+
+Provide a template for developers:
+
+```bash
+# supabase/.env.example
+OPENAI_API_KEY=sk-proj-your-key-here
+STRIPE_SECRET=sk_test_your-secret-here
+RESEND_API_KEY=re_your-key-here
+```
+
+Developers copy and fill in their values:
+
+```bash
+cp supabase/.env.example supabase/.env.local
+# Edit .env.local with actual values
+```
+
+### Rotate Secrets Regularly
+
+Update secrets periodically:
+
+```bash
+# Generate new API key
+# Update secret
+supabase secrets set OPENAI_API_KEY=sk-proj-new-key
+
+# Verify
+supabase secrets list
+```
+
+## Troubleshooting
+
+### Secret Not Available
+
+If a secret isn't available:
+
+1. **Check if set**:
+   ```bash
+   supabase secrets list
+   ```
+
+2. **Set the secret**:
+   ```bash
+   supabase secrets set KEY=value
+   ```
+
+3. **Redeploy the function**:
+   ```bash
+   supabase functions deploy function-name
+   ```
+
+### Local vs Production Differences
+
+If behavior differs between local and production:
+
+1. **Compare secrets**:
+   ```bash
+   # Local
+   cat supabase/.env.local
+   
+   # Production
+   supabase secrets list
+   ```
+
+2. **Ensure consistency** between environments
+
+3. **Test with production values** locally when debugging
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Debugging" icon="bug" href="/functions/debugging">
+    Debug and monitor your Edge Functions
+  </Card>
+  <Card title="Deploy Functions" icon="upload" href="/functions/deploy">
+    Learn deployment strategies
+  </Card>
+</CardGroup>

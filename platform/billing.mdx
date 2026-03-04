@@ -1,0 +1,472 @@
+---
+title: Billing & Usage
+description: Understand Supabase pricing, usage tracking, and billing management
+---
+
+Supabase offers flexible pricing based on your project needs. From free hobby projects to enterprise-grade infrastructure, you only pay for what you use.
+
+## Pricing Plans
+
+### Free Plan
+
+Perfect for side projects, prototypes, and learning:
+
+<CardGroup cols={2}>
+  <Card title="Database" icon="database">
+    - 500 MB database space
+    - Unlimited API requests
+    - Unlimited Auth users
+    - Community support
+  </Card>
+  <Card title="Storage & Functions" icon="box">
+    - 1 GB file storage
+    - 2 GB bandwidth
+    - 500K Edge Function invocations
+    - 2 projects maximum
+  </Card>
+</CardGroup>
+
+<Info>
+  Free projects automatically pause after 7 days of inactivity. Simply visit your dashboard to restore them instantly.
+</Info>
+
+### Pro Plan ($25/month per project)
+
+Production-ready features:
+
+- **8 GB database** (first 8 GB included, then $0.125/GB)
+- **100 GB storage** (then $0.021/GB)
+- **50 GB bandwidth** (then $0.09/GB)
+- **2M Edge Function invocations** (then $2/million)
+- **No project pausing**
+- **Daily backups** with 7-day retention
+- **Email support**
+- **Custom domains**
+- **Point-in-time recovery**
+- **SOC 2 compliance**
+
+### Team Plan (Custom pricing)
+
+For growing teams and applications:
+
+- Everything in Pro
+- **100 GB database** per project
+- **250 GB bandwidth** per project  
+- **10M Edge Function invocations** per month
+- **Priority support** with 1-hour response SLA
+- **Read replicas**
+- **Daily backups** with 14-day retention
+
+### Enterprise Plan (Custom pricing)
+
+For organizations with advanced needs:
+
+- Custom resource allocation
+- **99.95% uptime SLA**
+- **24/7 support** with dedicated Slack channel
+- **SAML SSO**
+- **Custom contracts** and invoicing
+- **Dedicated infrastructure**
+- **Advanced security** and compliance
+- **Database backups** with custom retention
+- **On-premise deployment** options
+
+## Usage-Based Pricing
+
+Beyond plan limits, you pay only for what you use:
+
+### Compute
+
+**Database CPU & Memory**:
+
+| Instance Size | vCPU | RAM | Price/hour |
+|---------------|------|-----|------------|
+| Micro | 2 | 1 GB | Included |
+| Small | 2 | 2 GB | $0.01344 |
+| Medium | 2 | 4 GB | $0.0206 |
+| Large | 2 | 8 GB | $0.0822 |
+| XL | 4 | 16 GB | $0.1517 |
+| 2XL | 8 | 32 GB | $0.2877 |
+| 4XL | 16 | 64 GB | $0.562 |
+| 8XL | 32 | 128 GB | $1.32 |
+| 12XL | 48 | 192 GB | $1.94 |
+| 16XL | 64 | 256 GB | $2.562 |
+
+<Tip>
+  Compute is charged hourly. Scale up during peak hours and scale down during quiet periods to optimize costs.
+</Tip>
+
+### Storage
+
+**Database Storage**: $0.125 per GB/month
+- Automatic backups included
+- SSD-backed for high performance
+- Scales automatically
+
+**File Storage**: $0.021 per GB/month
+- S3-compatible object storage
+- Includes redundancy
+- Image transformations included
+
+### Bandwidth
+
+**Egress (Outbound)**: $0.09 per GB
+- API responses
+- File downloads
+- Realtime connections
+- Edge Function responses
+
+**Ingress (Inbound)**: Free
+- File uploads
+- API requests
+- Database connections
+
+### Edge Functions
+
+**Invocations**: $2 per million invocations (after free tier)
+- Includes up to 100ms CPU time per invocation
+- Additional CPU time: $0.00001 per GB-second
+
+**Function Count**: First 10 functions free, then $10/month per additional 10 functions
+
+### Realtime
+
+**Concurrent Connections**:
+- Free: 200 connections
+- Pro: 500 connections (included)
+- Additional: $10 per 1,000 connections/month
+
+**Messages**: 
+- 2 million messages free
+- Then $2.50 per million messages
+
+### Advanced Features
+
+**Point-in-Time Recovery (PITR)**: $100/month
+- Restore to any point in last 7 days (Pro) or 14 days (Team)
+- Essential for production databases
+
+**Read Replicas**: Starting at $500/month
+- Deploy databases closer to users
+- Reduce query latency
+- Distribute read load
+
+**Custom Domains**: Free on Pro plan and above
+- Use your own domain for APIs
+- Automatic SSL certificates
+- Multiple domains supported
+
+**IPv4 Address**: $4/month (IPv6 free)
+- Dedicated IPv4 for your project
+- Required for some network configurations
+
+## Understanding Your Bill
+
+### Billing Cycle
+
+Billing is calculated monthly:
+
+1. **Subscription**: Charged at the start of billing period
+2. **Usage**: Calculated throughout the month
+3. **Invoice**: Generated at the end of billing period
+4. **Payment**: Automatically charged to payment method
+
+### Usage Dashboard
+
+Monitor usage in real-time:
+
+<Steps>
+  <Step title="Navigate to Usage">
+    Open your organization dashboard and click "Usage" in the sidebar.
+  </Step>
+  
+  <Step title="Select Time Period">
+    View current billing period or historical usage.
+  </Step>
+  
+  <Step title="Review Metrics">
+    See breakdown by:
+    - Database size and compute
+    - Storage and bandwidth
+    - Edge Function invocations
+    - Realtime connections
+    - Auth users and requests
+  </Step>
+</Steps>
+
+### Cost Estimation
+
+Example monthly costs for a typical application:
+
+<Tabs>
+  <Tab title="Small App">
+    **Scenario**: Personal blog with 1,000 visitors/month
+    
+    - Plan: **Free** ($0)
+    - Database: 200 MB (free)
+    - Storage: 500 MB images (free)
+    - Bandwidth: 1 GB (free)
+    - Functions: 10K invocations (free)
+    
+    **Total**: **$0/month**
+  </Tab>
+  
+  <Tab title="Growing Startup">
+    **Scenario**: SaaS app with 10,000 active users
+    
+    - Plan: **Pro** ($25)
+    - Database: 15 GB ($0.88)
+    - Storage: 120 GB ($2.10)
+    - Bandwidth: 80 GB ($2.70)
+    - Functions: 5M invocations ($6)
+    - Compute: Small instance ($10)
+    
+    **Total**: **~$47/month**
+  </Tab>
+  
+  <Tab title="Enterprise App">
+    **Scenario**: Platform with 100,000+ users
+    
+    - Plan: **Team** (Custom)
+    - Database: 200 GB (included + $12.50)
+    - Storage: 500 GB ($8.40)
+    - Bandwidth: 1 TB ($76.50)
+    - Functions: 50M invocations ($96)
+    - Compute: 2XL instance ($210)
+    - PITR: Enabled ($100)
+    - Read Replica: 1 region ($500)
+    
+    **Total**: **~$1,003/month**
+  </Tab>
+</Tabs>
+
+## Cost Optimization
+
+### Database Optimization
+
+<AccordionGroup>
+  <Accordion title="Use Indexes Wisely" icon="magnifying-glass">
+    Create indexes on frequently queried columns to improve performance and reduce compute usage.
+    
+    ```sql
+    CREATE INDEX idx_users_email ON users(email);
+    CREATE INDEX idx_posts_created ON posts(created_at DESC);
+    ```
+  </Accordion>
+
+  <Accordion title="Archive Old Data" icon="box-archive">
+    Move historical data to separate tables or external storage:
+    
+    ```sql
+    -- Archive posts older than 1 year
+    INSERT INTO posts_archive 
+    SELECT * FROM posts 
+    WHERE created_at < NOW() - INTERVAL '1 year';
+    
+    DELETE FROM posts 
+    WHERE created_at < NOW() - INTERVAL '1 year';
+    ```
+  </Accordion>
+
+  <Accordion title="Vacuum Regularly" icon="broom">
+    Enable auto-vacuum to reclaim space:
+    
+    ```sql
+    -- Already enabled by default, but verify:
+    SHOW autovacuum;
+    ```
+  </Accordion>
+
+  <Accordion title="Right-Size Compute" icon="gauge">
+    Monitor CPU and memory usage. Scale down if consistently under 50% utilization.
+  </Accordion>
+</AccordionGroup>
+
+### Storage Optimization
+
+**Image Optimization**:
+- Use Supabase image transformations instead of storing multiple sizes
+- Convert to WebP format for smaller file sizes
+- Enable lazy loading
+
+```javascript
+// Generate optimized image URL
+const imageUrl = supabase.storage
+  .from('avatars')
+  .getPublicUrl('avatar.jpg', {
+    transform: {
+      width: 200,
+      height: 200,
+      format: 'webp',
+      quality: 80
+    }
+  })
+```
+
+**File Lifecycle**:
+- Delete unused files regularly
+- Set up automatic cleanup for temporary files
+- Use presigned URLs with expiration
+
+### Bandwidth Optimization
+
+**Enable Caching**:
+```javascript
+// Cache API responses
+const { data } = await supabase
+  .from('posts')
+  .select('*')
+  .limit(10)
+
+// Cache in browser/CDN for 5 minutes
+Response.headers.set('Cache-Control', 'public, max-age=300')
+```
+
+**Pagination**:
+```javascript
+// Limit data transferred per request
+const { data, count } = await supabase
+  .from('posts')
+  .select('*', { count: 'exact' })
+  .range(0, 9) // Only fetch 10 records
+```
+
+**Select Specific Columns**:
+```javascript
+// Only fetch needed columns
+const { data } = await supabase
+  .from('users')
+  .select('id, name, email') // Don't fetch large columns
+```
+
+### Edge Functions Optimization
+
+**Cold Starts**:
+- Keep functions small and focused
+- Minimize dependencies
+- Use Deno's built-in modules when possible
+
+**Execution Time**:
+```typescript
+// Use database functions for complex queries
+const { data } = await supabase
+  .rpc('complex_aggregation') // Runs in database
+
+// Better than fetching all data and processing in function
+```
+
+## Billing Management
+
+### Payment Methods
+
+<Steps>
+  <Step title="Add Payment Method">
+    Navigate to Organization Settings → Billing.
+  </Step>
+  
+  <Step title="Enter Card Details">
+    Provide credit/debit card information. Supports Visa, Mastercard, and American Express.
+  </Step>
+  
+  <Step title="Set as Default">
+    Choose default payment method for automatic billing.
+  </Step>
+</Steps>
+
+### Spending Limits
+
+Prevent unexpected charges:
+
+<Warning>
+  When spending limit is reached, additional usage is disabled. Your project remains accessible but cannot exceed limits.
+</Warning>
+
+```javascript
+// Set spending limit via API
+const limit = {
+  maxMonthlySpend: 100, // USD
+  alerts: [50, 75, 90] // Alert at 50%, 75%, 90%
+}
+```
+
+### Invoices & Receipts
+
+**Access Invoices**:
+1. Organization Settings → Billing → Invoices
+2. Download PDF or view in browser
+3. Invoices sent to billing email automatically
+
+**Invoice Contents**:
+- Subscription charges
+- Usage breakdown by resource
+- Credits and discounts applied
+- Tax information
+- Payment method
+
+### Credits & Discounts
+
+**Startup Program**: Apply for credits if you're in an accelerator or early-stage startup
+
+**Open Source**: Free Pro plan for qualifying open source projects
+
+**Education**: Special pricing for students and educators
+
+**Referral Program**: Earn credits by referring new users
+
+## Billing Support
+
+<CardGroup cols={2}>
+  <Card title="Billing Questions" icon="circle-question">
+    Email billing@supabase.com for invoice questions, payment issues, or plan changes.
+  </Card>
+  <Card title="Usage Optimization" icon="chart-line">
+    Contact support for help optimizing your usage and reducing costs.
+  </Card>
+  <Card title="Enterprise Sales" icon="building">
+    Email enterprise@supabase.com for custom contracts and volume pricing.
+  </Card>
+  <Card title="Documentation" icon="book">
+    Visit docs.supabase.com for guides on optimizing your application.
+  </Card>
+</CardGroup>
+
+## Frequently Asked Questions
+
+<AccordionGroup>
+  <Accordion title="Can I downgrade from Pro to Free?" icon="arrow-down">
+    Yes, but ensure your projects fit within Free plan limits (500 MB database, 1 GB storage). Projects exceeding limits will be read-only until you upgrade or reduce usage.
+  </Accordion>
+
+  <Accordion title="What happens if I exceed my limits?" icon="triangle-exclamation">
+    On Free plan, some features may be rate-limited. On paid plans, you're charged for overage based on usage pricing. Set spending limits to control costs.
+  </Accordion>
+
+  <Accordion title="How do I cancel my subscription?" icon="xmark">
+    Downgrade to Free plan or delete your projects. No cancellation fees. Unused time is not refunded but you retain access until period end.
+  </Accordion>
+
+  <Accordion title="Do you offer annual billing?" icon="calendar">
+    Yes, contact sales@supabase.com for annual contracts with discounted pricing.
+  </Accordion>
+
+  <Accordion title="Can I get a refund?" icon="money-bill-transfer">
+    Refunds are handled case-by-case. Contact billing@supabase.com within 7 days of charge.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Usage Dashboard" icon="chart-mixed" href="https://supabase.com/dashboard">
+    Monitor your current usage and costs
+  </Card>
+  <Card title="Upgrade Plan" icon="arrow-up" href="https://supabase.com/dashboard">
+    Scale your projects with Pro or Team
+  </Card>
+  <Card title="Cost Optimization" icon="piggy-bank" href="/essentials/optimization">
+    Learn how to reduce costs
+  </Card>
+  <Card title="Organizations" icon="users" href="/platform/organizations">
+    Manage team billing
+  </Card>
+</CardGroup>

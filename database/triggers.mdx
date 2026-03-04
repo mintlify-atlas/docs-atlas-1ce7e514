@@ -1,0 +1,582 @@
+---
+title: 'Database Triggers'
+description: 'Automatically execute code on database events in PostgreSQL'
+---
+
+Triggers are database functions that execute automatically when specific events occur on a table, such as INSERT, UPDATE, DELETE, or TRUNCATE operations. They're powerful tools for maintaining data integrity, enforcing business rules, and automating workflows.
+
+## How Triggers Work
+
+A trigger consists of two parts:
+
+1. **Trigger Function**: A function that contains the code to execute
+2. **Trigger Definition**: Specifies when and how to call the function
+
+```sql
+-- Step 1: Create the trigger function
+create or replace function trigger_function_name()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- Your trigger logic here
+  return new;  -- or return old, or return null
+end;
+$$;
+
+-- Step 2: Create the trigger
+create trigger trigger_name
+  after insert on table_name
+  for each row
+  execute function trigger_function_name();
+```
+
+## Trigger Timing
+
+Triggers can fire at different times relative to the triggering event.
+
+### BEFORE Triggers
+
+Execute before the operation. Can modify the data being inserted/updated.
+
+```sql
+-- Validate and transform data before insert
+create or replace function validate_email()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- Convert email to lowercase
+  new.email := lower(trim(new.email));
+  
+  -- Validate email format
+  if new.email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' then
+    raise exception 'Invalid email format: %', new.email;
+  end if;
+  
+  return new;
+end;
+$$;
+
+create trigger validate_user_email
+  before insert or update on users
+  for each row
+  execute function validate_email();
+```
+
+### AFTER Triggers
+
+Execute after the operation completes. Cannot modify the data.
+
+```sql
+-- Log changes after they occur
+create or replace function log_price_change()
+returns trigger
+language plpgsql
+as $$
+begin
+  insert into price_history (product_id, old_price, new_price, changed_at)
+  values (new.id, old.price, new.price, now());
+  
+  return new;
+end;
+$$;
+
+create trigger track_price_changes
+  after update on products
+  for each row
+  when (old.price is distinct from new.price)
+  execute function log_price_change();
+```
+
+## Trigger Events
+
+Triggers can respond to different types of operations.
+
+### INSERT Trigger
+
+```sql
+-- Set default values or generate IDs
+create or replace function set_user_defaults()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- Generate username if not provided
+  if new.username is null then
+    new.username := 'user_' || new.id;
+  end if;
+  
+  -- Set default avatar
+  if new.avatar_url is null then
+    new.avatar_url := 'https://example.com/default-avatar.png';
+  end if;
+  
+  return new;
+end;
+$$;
+
+create trigger set_defaults
+  before insert on users
+  for each row
+  execute function set_user_defaults();
+```
+
+### UPDATE Trigger
+
+```sql
+-- Automatically update timestamps
+create or replace function update_timestamp()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+create trigger update_products_timestamp
+  before update on products
+  for each row
+  execute function update_timestamp();
+```
+
+### DELETE Trigger
+
+```sql
+-- Soft delete implementation
+create or replace function soft_delete()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- Instead of deleting, update deleted_at
+  update users
+  set deleted_at = now()
+  where id = old.id;
+  
+  -- Prevent the actual delete
+  return null;
+end;
+$$;
+
+create trigger soft_delete_users
+  before delete on users
+  for each row
+  execute function soft_delete();
+```
+
+### Multiple Events
+
+```sql
+create or replace function audit_changes()
+returns trigger
+language plpgsql
+as $$
+begin
+  if TG_OP = 'INSERT' then
+    insert into audit_log (table_name, operation, new_data)
+    values (TG_TABLE_NAME, 'INSERT', row_to_json(new));
+    return new;
+  elsif TG_OP = 'UPDATE' then
+    insert into audit_log (table_name, operation, old_data, new_data)
+    values (TG_TABLE_NAME, 'UPDATE', row_to_json(old), row_to_json(new));
+    return new;
+  elsif TG_OP = 'DELETE' then
+    insert into audit_log (table_name, operation, old_data)
+    values (TG_TABLE_NAME, 'DELETE', row_to_json(old));
+    return old;
+  end if;
+end;
+$$;
+
+create trigger audit_products
+  after insert or update or delete on products
+  for each row
+  execute function audit_changes();
+```
+
+## Trigger Variables
+
+Trigger functions have access to special variables:
+
+- `NEW`: The new row data (INSERT/UPDATE)
+- `OLD`: The old row data (UPDATE/DELETE)
+- `TG_OP`: The operation type ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')
+- `TG_TABLE_NAME`: The name of the table that fired the trigger
+- `TG_TABLE_SCHEMA`: The schema of the table
+- `TG_WHEN`: 'BEFORE' or 'AFTER'
+- `TG_LEVEL`: 'ROW' or 'STATEMENT'
+
+```sql
+create or replace function trigger_info()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise notice 'Trigger: % on %.%', TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME;
+  raise notice 'When: %, Level: %', TG_WHEN, TG_LEVEL;
+  
+  if TG_OP = 'UPDATE' then
+    raise notice 'Old: %, New: %', old.id, new.id;
+  end if;
+  
+  return new;
+end;
+$$;
+```
+
+## Real Example: Salary History Tracking
+
+Here's a complete example of tracking employee salary changes:
+
+```sql
+-- Create the salary history table
+create table salary_log (
+  id bigint generated always as identity primary key,
+  employee_id bigint not null,
+  old_salary numeric(10,2),
+  new_salary numeric(10,2),
+  changed_at timestamptz default now(),
+  changed_by text
+);
+
+-- Create the trigger function
+create or replace function update_salary_log()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Only log if salary actually changed
+  if old.salary is distinct from new.salary then
+    insert into salary_log (
+      employee_id,
+      old_salary,
+      new_salary,
+      changed_by
+    ) values (
+      new.id,
+      old.salary,
+      new.salary,
+      current_user
+    );
+  end if;
+  
+  return new;
+end;
+$$;
+
+-- Create the trigger
+create trigger salary_update_trigger
+  after update on employees
+  for each row
+  execute function update_salary_log();
+```
+
+## Real Example: Auto-updating Timestamps
+
+Real example from Supabase source code:
+
+```sql
+-- Create a reusable timestamp update function
+create or replace function utils.update_timestamp()
+returns trigger
+set search_path = ''
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+-- Grant execution permissions
+grant execute on function utils.update_timestamp() to anon;
+grant execute on function utils.update_timestamp() to authenticated;
+
+-- Apply to a table
+create trigger sync_updated_at_content_service
+  before update on content.service
+  for each row
+  execute function utils.update_timestamp();
+```
+
+## Real Example: Soft Delete with Rule
+
+Another pattern from Supabase source:
+
+```sql
+create or replace rule soft_delete_content_service as
+  on delete to content.service
+  do instead (
+    update content.service
+    set deleted_at = now()
+    where id = old.id
+  );
+```
+
+## Row Level vs Statement Level
+
+### FOR EACH ROW
+
+Executes once per affected row (most common):
+
+```sql
+create trigger row_trigger
+  after insert on orders
+  for each row  -- Fires once per inserted row
+  execute function process_order();
+```
+
+### FOR EACH STATEMENT
+
+Executes once per SQL statement, regardless of rows affected:
+
+```sql
+create trigger statement_trigger
+  after insert on orders
+  for each statement  -- Fires once per INSERT statement
+  execute function log_bulk_insert();
+```
+
+## Conditional Triggers
+
+Use WHEN clause to conditionally execute triggers:
+
+```sql
+-- Only trigger when specific columns change
+create trigger notify_price_change
+  after update on products
+  for each row
+  when (old.price is distinct from new.price)
+  execute function notify_price_update();
+
+-- Only trigger for high-value orders
+create trigger verify_large_order
+  before insert on orders
+  for each row
+  when (new.total_amount > 10000)
+  execute function verify_order();
+```
+
+## Realtime Integration
+
+Supabase triggers can publish real-time events. Here's an example from the Slack clone:
+
+```sql
+-- Enable realtime for specific tables
+alter publication supabase_realtime add table public.messages;
+alter publication supabase_realtime add table public.channels;
+
+-- Set replica identity for change data
+alter table public.messages replica identity full;
+```
+
+Subscribe to changes in your app:
+
+```javascript
+const channel = supabase
+  .channel('messages-changes')
+  .on(
+    'postgres_changes',
+    {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'messages'
+    },
+    (payload) => {
+      console.log('New message:', payload.new)
+    }
+  )
+  .subscribe()
+```
+
+## Advanced: Auth Hook Trigger
+
+Real example from Slack clone - automatically create user profile:
+
+```sql
+-- Create user profile when auth user is created
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = auth, public
+as $$
+declare
+  is_admin boolean;
+begin
+  -- Insert into public users table
+  insert into public.users (id, username)
+  values (new.id, new.email);
+  
+  -- Check if this is the first user
+  select count(*) = 1 from auth.users into is_admin;
+  
+  -- Assign roles based on email
+  if position('+supaadmin@' in new.email) > 0 then
+    insert into public.user_roles (user_id, role)
+    values (new.id, 'admin');
+  elsif position('+supamod@' in new.email) > 0 then
+    insert into public.user_roles (user_id, role)
+    values (new.id, 'moderator');
+  end if;
+  
+  return new;
+end;
+$$;
+
+-- Trigger on auth.users insert
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row
+  execute function public.handle_new_user();
+```
+
+## Managing Triggers
+
+### Disable/Enable Trigger
+
+```sql
+-- Disable a specific trigger
+alter table products disable trigger update_timestamp_trigger;
+
+-- Enable it again
+alter table products enable trigger update_timestamp_trigger;
+
+-- Disable all triggers on a table
+alter table products disable trigger all;
+```
+
+### Drop Trigger
+
+```sql
+-- Drop the trigger
+drop trigger if exists update_timestamp_trigger on products;
+
+-- Drop the function (cascade drops all dependent triggers)
+drop function if exists update_timestamp() cascade;
+```
+
+### List Triggers
+
+```sql
+-- View all triggers in a schema
+select
+  trigger_name,
+  event_manipulation,
+  event_object_table,
+  action_timing
+from information_schema.triggers
+where trigger_schema = 'public'
+order by event_object_table, trigger_name;
+```
+
+## Common Use Cases
+
+<AccordionGroup>
+  <Accordion title="Audit Logging">
+    Track all changes to sensitive tables for compliance and debugging.
+  </Accordion>
+
+  <Accordion title="Data Validation">
+    Enforce complex business rules that can't be expressed with simple constraints.
+  </Accordion>
+
+  <Accordion title="Derived Data">
+    Automatically update calculated fields or summary tables.
+  </Accordion>
+
+  <Accordion title="Cascading Changes">
+    Update related records when a parent record changes.
+  </Accordion>
+
+  <Accordion title="Notifications">
+    Send alerts or trigger workflows when important events occur.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Warning>
+  Triggers can impact performance. Keep them fast and simple.
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="Keep triggers simple">
+    Complex logic should be in the application or database functions, not triggers.
+  </Accordion>
+
+  <Accordion title="Avoid trigger chains">
+    Don't create triggers that fire other triggers (can lead to infinite loops).
+  </Accordion>
+
+  <Accordion title="Use WHEN clause">
+    Filter trigger execution to only when necessary.
+  </Accordion>
+
+  <Accordion title="Consider statement-level triggers">
+    For bulk operations, statement-level triggers are more efficient.
+  </Accordion>
+
+  <Accordion title="Set search_path on security definer">
+    Always set `search_path` on security definer trigger functions.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Infinite Trigger Loops
+
+```sql
+-- Bad: Can cause infinite loop
+create trigger bad_trigger
+  after update on products
+  for each row
+  execute function update_products();  -- Updates products table!
+
+-- Good: Prevent loop with conditional
+create or replace function update_products_safe()
+returns trigger as $$
+begin
+  if new.updated_at = old.updated_at then
+    new.updated_at := now();
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+```
+
+### Debugging Triggers
+
+```sql
+create or replace function debug_trigger()
+returns trigger as $$
+begin
+  raise notice 'Trigger fired: %', TG_OP;
+  raise notice 'Old: %', row_to_json(old);
+  raise notice 'New: %', row_to_json(new);
+  return new;
+end;
+$$ language plpgsql;
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Functions" icon="function" href="/database/functions">
+    Learn more about database functions
+  </Card>
+  <Card title="Tables" icon="table" href="/database/tables">
+    Understand table structures and relationships
+  </Card>
+  <Card title="Extensions" icon="puzzle-piece" href="/database/extensions">
+    Explore PostgreSQL extensions
+  </Card>
+  <Card title="Realtime" icon="signal" href="/guides/realtime">
+    Subscribe to database changes in real-time
+  </Card>
+</CardGroup>

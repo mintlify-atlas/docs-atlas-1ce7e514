@@ -1,122 +1,231 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Supabase",
+  "theme": "sequoia",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#3ecf8e",
+    "light": "#327c5c",
+    "dark": "#1b1c1c"
   },
-  "favicon": "/favicon.svg",
+
+  "logo": {
+    "light": "https://media.brand.dev/06015ea0-b175-40ef-a139-63bfef561802.png",
+    "dark": "https://media.brand.dev/06015ea0-b175-40ef-a139-63bfef561802.png"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/supabase/supabase"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/supabase/supabase"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "architecture"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/database",
+              "concepts/authentication",
+              "concepts/storage",
+              "concepts/realtime",
+              "concepts/edge-functions",
+              "concepts/ai-vectors"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Database",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "database/overview",
+              "database/tables",
+              "database/functions",
+              "database/triggers",
+              "database/extensions",
+              "database/migrations"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Authentication",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "auth/overview",
+              "auth/sign-up",
+              "auth/sign-in",
+              "auth/oauth",
+              "auth/mfa",
+              "auth/row-level-security"
+            ]
+          },
+          {
+            "group": "Storage",
+            "pages": [
+              "storage/overview",
+              "storage/uploads",
+              "storage/downloads",
+              "storage/image-transformations",
+              "storage/access-control"
+            ]
+          },
+          {
+            "group": "Realtime",
+            "pages": [
+              "realtime/overview",
+              "realtime/postgres-changes",
+              "realtime/broadcast",
+              "realtime/presence"
+            ]
+          },
+          {
+            "group": "Edge Functions",
+            "pages": [
+              "functions/overview",
+              "functions/quickstart",
+              "functions/deploy",
+              "functions/environment-variables",
+              "functions/debugging"
+            ]
+          },
+          {
+            "group": "AI & Vectors",
+            "pages": [
+              "ai/overview",
+              "ai/vector-embeddings",
+              "ai/similarity-search",
+              "ai/pgvector"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Platform",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Platform",
             "pages": [
-              "api-reference/introduction"
+              "platform/overview",
+              "platform/projects",
+              "platform/organizations",
+              "platform/billing"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Self-Hosting",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "self-hosting/overview",
+              "self-hosting/docker",
+              "self-hosting/configuration",
+              "self-hosting/security",
+              "self-hosting/updates"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "cli/overview",
+              "cli/installation",
+              "cli/local-development",
+              "cli/migrations",
+              "cli/deployment"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/overview",
+              "security/row-level-security",
+              "security/encryption",
+              "security/network"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Client Libraries",
+            "pages": [
+              "api/javascript",
+              "api/python",
+              "api/flutter",
+              "api/swift",
+              "api/kotlin"
+            ]
+          },
+          {
+            "group": "REST API",
+            "pages": [
+              "api/rest/overview",
+              "api/rest/authentication",
+              "api/rest/database",
+              "api/rest/storage",
+              "api/rest/edge-functions"
+            ]
+          },
+          {
+            "group": "GraphQL API",
+            "pages": [
+              "api/graphql/overview",
+              "api/graphql/queries",
+              "api/graphql/mutations"
+            ]
+          },
+          {
+            "group": "Realtime API",
+            "pages": [
+              "api/realtime/overview",
+              "api/realtime/channels",
+              "api/realtime/subscriptions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Tutorials",
+            "pages": [
+              "guides/building-a-todo-app",
+              "guides/user-management",
+              "guides/file-uploads",
+              "guides/realtime-chat"
+            ]
+          },
+          {
+            "group": "Integration Guides",
+            "pages": [
+              "guides/nextjs",
+              "guides/react",
+              "guides/vue",
+              "guides/flutter-app"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/overview",
+              "examples/auth",
+              "examples/database",
+              "examples/storage",
+              "examples/ai"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

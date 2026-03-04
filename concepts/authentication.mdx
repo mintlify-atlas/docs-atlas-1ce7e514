@@ -1,0 +1,432 @@
+---
+title: 'Authentication'
+description: 'Learn about Supabase Authentication - a complete auth system with multiple providers, MFA, and seamless integration with your database.'
+---
+
+Supabase Auth is a complete authentication system that handles user sign-ups, logins, and session management. It's built on top of PostgreSQL and integrates seamlessly with Row Level Security for authorization.
+
+## Architecture
+
+Supabase Auth consists of four major layers:
+
+1. **Client Layer**: Your application code using Supabase SDKs or direct HTTP calls
+2. **Kong API Gateway**: Routes requests and validates JWTs
+3. **Auth Service (GoTrue)**: Manages authentication logic and token issuance
+4. **PostgreSQL Database**: Stores user data in the `auth` schema
+
+<Tip>
+The Auth service is a fork of [GoTrue](https://github.com/supabase/auth), originally created by Netlify and enhanced by Supabase.
+</Tip>
+
+## How Authentication Works
+
+When a user signs in:
+
+1. Client sends credentials to the Auth service via the API gateway
+2. Auth service validates credentials against the database
+3. Upon success, Auth service issues a JWT (JSON Web Token)
+4. Client stores the JWT and includes it in subsequent requests
+5. Kong gateway validates the JWT on each request
+6. PostgreSQL uses the JWT to enforce Row Level Security policies
+
+## Authentication Methods
+
+Supabase Auth supports multiple authentication methods:
+
+### Email and Password
+
+The traditional username/password approach:
+
+```typescript
+// Sign up a new user
+const { data, error } = await supabase.auth.signUp({
+  email: 'user@example.com',
+  password: 'secure-password',
+  options: {
+    data: {
+      first_name: 'John',
+      last_name: 'Doe'
+    }
+  }
+})
+
+// Sign in an existing user
+const { data, error } = await supabase.auth.signInWithPassword({
+  email: 'user@example.com',
+  password: 'secure-password'
+})
+```
+
+### Magic Links
+
+Passwordless authentication via email:
+
+```typescript
+// Send magic link to user's email
+const { data, error } = await supabase.auth.signInWithOtp({
+  email: 'user@example.com',
+  options: {
+    emailRedirectTo: 'https://example.com/welcome'
+  }
+})
+```
+
+### OAuth Providers
+
+Supabase supports 20+ OAuth providers including:
+
+- Google
+- GitHub
+- Apple
+- Facebook
+- Twitter
+- Microsoft
+- Discord
+- And many more...
+
+```typescript
+// Sign in with Google
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    redirectTo: 'https://example.com/auth/callback',
+    scopes: 'email profile'
+  }
+})
+
+// Sign in with GitHub
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'github'
+})
+```
+
+### Phone Authentication
+
+SMS-based authentication:
+
+```typescript
+// Send OTP to phone number
+const { data, error } = await supabase.auth.signInWithOtp({
+  phone: '+1234567890'
+})
+
+// Verify the OTP
+const { data, error } = await supabase.auth.verifyOtp({
+  phone: '+1234567890',
+  token: '123456',
+  type: 'sms'
+})
+```
+
+### Anonymous Sign-In
+
+Create temporary users without credentials:
+
+```typescript
+const { data, error } = await supabase.auth.signInAnonymously()
+
+// Later, convert to permanent account
+const { data, error } = await supabase.auth.updateUser({
+  email: 'user@example.com',
+  password: 'secure-password'
+})
+```
+
+## User Management
+
+### User Object
+
+The user object contains authentication data:
+
+```typescript
+const { data: { user } } = await supabase.auth.getUser()
+
+console.log(user)
+// {
+//   id: 'uuid',
+//   email: 'user@example.com',
+//   user_metadata: { first_name: 'John', last_name: 'Doe' },
+//   app_metadata: { provider: 'email', ... },
+//   created_at: '2024-01-01T00:00:00Z',
+//   ...
+// }
+```
+
+### User Metadata
+
+Store additional user information:
+
+```typescript
+// Update user metadata
+const { data, error } = await supabase.auth.updateUser({
+  data: {
+    avatar_url: 'https://example.com/avatar.jpg',
+    theme: 'dark'
+  }
+})
+```
+
+### Profile Tables
+
+Create a public profile table linked to auth.users:
+
+```sql
+create table public.profiles (
+  id uuid references auth.users(id) on delete cascade primary key,
+  username text unique,
+  avatar_url text,
+  bio text,
+  created_at timestamptz default now()
+);
+
+alter table public.profiles enable row level security;
+
+-- Allow users to read all profiles
+create policy "Profiles are viewable by everyone"
+  on profiles for select
+  using (true);
+
+-- Allow users to update their own profile
+create policy "Users can update own profile"
+  on profiles for update
+  using (auth.uid() = id);
+```
+
+Create profiles automatically with a trigger:
+
+```sql
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  insert into public.profiles (id, username)
+  values (new.id, new.raw_user_meta_data->>'username');
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+```
+
+## Session Management
+
+### Automatic Session Refresh
+
+Supabase SDKs automatically refresh expired sessions:
+
+```typescript
+// Sessions are automatically refreshed
+const { data: { session } } = await supabase.auth.getSession()
+```
+
+### Manual Session Management
+
+```typescript
+// Refresh session manually
+const { data, error } = await supabase.auth.refreshSession()
+
+// Sign out (clears local session)
+const { error } = await supabase.auth.signOut()
+
+// Sign out from all devices
+const { error } = await supabase.auth.signOut({ scope: 'global' })
+```
+
+### Session Callbacks
+
+Listen for auth state changes:
+
+```typescript
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log(event, session)
+  // Events: SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED, etc.
+  
+  if (event === 'SIGNED_IN') {
+    console.log('User signed in:', session.user)
+  }
+  
+  if (event === 'SIGNED_OUT') {
+    console.log('User signed out')
+  }
+})
+```
+
+## Multi-Factor Authentication (MFA)
+
+Add an extra layer of security with TOTP-based MFA:
+
+```typescript
+// Enroll a new factor
+const { data, error } = await supabase.auth.mfa.enroll({
+  factorType: 'totp'
+})
+
+// User scans QR code and enters verification code
+const { data, error } = await supabase.auth.mfa.verify({
+  factorId: data.id,
+  challengeId: data.challenge_id,
+  code: '123456'
+})
+
+// List enrolled factors
+const { data, error } = await supabase.auth.mfa.listFactors()
+
+// Unenroll a factor
+const { data, error } = await supabase.auth.mfa.unenroll({
+  factorId: 'factor-id'
+})
+```
+
+## Server-Side Auth
+
+### Next.js (App Router)
+
+```typescript
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+export async function createClient() {
+  const cookieStore = await cookies()
+  
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        }
+      }
+    }
+  )
+}
+
+// Use in server components
+const supabase = await createClient()
+const { data: { user } } = await supabase.auth.getUser()
+```
+
+### API Routes
+
+```typescript
+// app/api/protected/route.ts
+import { createClient } from '@/lib/supabase/server'
+
+export async function GET() {
+  const supabase = await createClient()
+  
+  const { data: { user }, error } = await supabase.auth.getUser()
+  
+  if (error || !user) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+  
+  return Response.json({ user })
+}
+```
+
+## Authorization with RLS
+
+Combine Auth with Row Level Security:
+
+```sql
+-- Only allow users to read their own data
+create policy "Users can read own data"
+  on private_data for select
+  using (auth.uid() = user_id);
+
+-- Only allow authenticated users to insert
+create policy "Authenticated users can insert"
+  on posts for insert
+  to authenticated
+  with check (auth.uid() = author_id);
+
+-- Only allow service role to delete
+create policy "Service role can delete"
+  on posts for delete
+  to service_role
+  using (true);
+```
+
+Access user info in policies:
+
+```sql
+-- Access user email
+auth.email()
+
+-- Access user role
+auth.role()
+
+-- Access custom claims
+auth.jwt() ->> 'custom_claim'
+```
+
+## Auth Hooks
+
+Customize authentication flows with hooks:
+
+- **Before User Created**: Modify user data before creation
+- **Send Email**: Customize email sending
+- **Send SMS**: Customize SMS sending  
+- **Password Verification**: Custom password validation
+- **Custom Access Token**: Add custom claims to JWTs
+- **MFA Verification**: Custom MFA logic
+
+Example custom access token hook:
+
+```typescript
+// edge-functions/custom-access-token/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+
+serve(async (req) => {
+  const { user } = await req.json()
+  
+  return new Response(
+    JSON.stringify({
+      claims: {
+        role: user.email?.endsWith('@admin.com') ? 'admin' : 'user',
+        subscription_tier: 'premium'
+      }
+    }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+```
+
+## Security Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use RLS" icon="shield-check">
+    Always enforce authorization with Row Level Security policies.
+  </Card>
+  <Card title="Enable MFA" icon="key">
+    Require multi-factor authentication for sensitive operations.
+  </Card>
+  <Card title="Validate Emails" icon="envelope">
+    Enable email confirmation to verify user email addresses.
+  </Card>
+  <Card title="Rate Limiting" icon="gauge">
+    Configure rate limits to prevent abuse and brute force attacks.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Social Auth" href="/guides/auth/social-login" icon="users">
+    Set up OAuth providers for social login
+  </Card>
+  <Card title="Server-Side Auth" href="/guides/auth/server-side" icon="server">
+    Implement authentication in server components
+  </Card>
+  <Card title="Auth Hooks" href="/guides/auth/auth-hooks" icon="webhook">
+    Customize authentication flows with hooks
+  </Card>
+  <Card title="RLS Policies" href="/guides/database/postgres/row-level-security" icon="lock">
+    Secure your data with Row Level Security
+  </Card>
+</CardGroup>

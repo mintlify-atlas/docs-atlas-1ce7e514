@@ -1,0 +1,462 @@
+---
+title: 'Multi-Factor Authentication'
+description: 'Add an extra layer of security with Time-based One-Time Passwords (TOTP)'
+---
+
+Multi-Factor Authentication (MFA) adds an additional security layer by requiring users to provide a second form of verification. Supabase supports TOTP (Time-based One-Time Password) using authenticator apps.
+
+## Overview
+
+Supabase MFA uses the TOTP standard, compatible with popular authenticator apps:
+
+- Google Authenticator
+- Microsoft Authenticator
+- Authy
+- 1Password
+- Any TOTP-compatible app
+
+## How MFA Works
+
+<Steps>
+  <Step title="User Signs In">
+    User authenticates with email/password or OAuth
+  </Step>
+  
+  <Step title="Enroll MFA">
+    User scans QR code or enters secret key into authenticator app
+  </Step>
+  
+  <Step title="Verify Code">
+    User enters 6-digit code from authenticator app
+  </Step>
+  
+  <Step title="AAL2 Session">
+    User now has an AAL2 (Authenticator Assurance Level 2) session
+  </Step>
+</Steps>
+
+## Assurance Levels
+
+Supabase uses Authenticator Assurance Levels (AAL) to determine session security:
+
+- **AAL1**: Single-factor authentication (email/password or OAuth)
+- **AAL2**: Multi-factor authentication (MFA verified)
+
+```javascript
+const { currentLevel, nextLevel } = supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+
+console.log('Current level:', currentLevel) // 'aal1' or 'aal2'
+console.log('Next level:', nextLevel) // 'aal2' if MFA is available
+```
+
+## Enable MFA
+
+Enable MFA in your Supabase dashboard:
+
+1. Navigate to Authentication > Settings
+2. Scroll to "Multi-Factor Authentication"
+3. Toggle "Enable Multi-Factor Authentication"
+
+## Enroll MFA
+
+### Step 1: Initiate Enrollment
+
+```javascript
+const { data, error } = await supabase.auth.mfa.enroll({
+  factorType: 'totp',
+})
+
+if (error) {
+  console.error('Error enrolling MFA:', error.message)
+  return
+}
+
+const { id, type, totp } = data
+
+// QR code for scanning
+const qrCode = totp.qr_code // SVG data URL
+
+// Secret for manual entry
+const secret = totp.secret
+
+// Factor ID for verification
+const factorId = id
+```
+
+### Step 2: Display QR Code
+
+```jsx React Component
+import { useState } from 'react'
+import { supabase } from './lib/supabase'
+
+export default function EnrollMFA() {
+  const [qrCode, setQrCode] = useState('')
+  const [secret, setSecret] = useState('')
+  const [factorId, setFactorId] = useState('')
+  const [code, setCode] = useState('')
+
+  const enrollMFA = async () => {
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: 'totp',
+    })
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    setQrCode(data.totp.qr_code)
+    setSecret(data.totp.secret)
+    setFactorId(data.id)
+  }
+
+  const verifyMFA = async () => {
+    const challenge = await supabase.auth.mfa.challenge({ factorId })
+    
+    const { data, error } = await supabase.auth.mfa.verify({
+      factorId,
+      challengeId: challenge.data.id,
+      code,
+    })
+
+    if (error) {
+      alert('Invalid code: ' + error.message)
+    } else {
+      alert('MFA enrolled successfully!')
+    }
+  }
+
+  return (
+    <div>
+      <h2>Setup MFA</h2>
+      
+      {!qrCode ? (
+        <button onClick={enrollMFA}>Start MFA Enrollment</button>
+      ) : (
+        <div>
+          <p>Scan this QR code with your authenticator app:</p>
+          <img src={qrCode} alt="QR Code" />
+          
+          <p>Or enter this secret manually:</p>
+          <code>{secret}</code>
+          
+          <input
+            type="text"
+            placeholder="Enter 6-digit code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            maxLength={6}
+          />
+          
+          <button onClick={verifyMFA}>Verify and Enable MFA</button>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+### Step 3: Verify Enrollment
+
+```javascript
+// Create a challenge
+const { data: challengeData, error: challengeError } = 
+  await supabase.auth.mfa.challenge({ factorId })
+
+const challengeId = challengeData.id
+
+// Verify the code from authenticator app
+const { data, error } = await supabase.auth.mfa.verify({
+  factorId,
+  challengeId,
+  code: '123456', // 6-digit code from authenticator
+})
+
+if (error) {
+  console.error('Verification failed:', error.message)
+} else {
+  console.log('MFA enrolled successfully!')
+}
+```
+
+## Complete Flutter MFA Example
+
+```dart Flutter Enrollment
+import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+class MFAEnrollPage extends StatefulWidget {
+  const MFAEnrollPage({super.key});
+
+  @override
+  State<MFAEnrollPage> createState() => _MFAEnrollPageState();
+}
+
+class _MFAEnrollPageState extends State<MFAEnrollPage> {
+  final supabase = Supabase.instance.client;
+  late final Future<MFAEnrollResponse> _enrollFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _enrollFuture = supabase.auth.mfa.enroll();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Setup MFA')),
+      body: FutureBuilder(
+        future: _enrollFuture,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final response = snapshot.data!;
+          final qrCodeUrl = response.totp.qrCode;
+          final secret = response.totp.secret;
+          final factorId = response.id;
+
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              const Text(
+                'Scan QR code with your authenticator app:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              SvgPicture.string(qrCodeUrl, width: 200, height: 200),
+              const SizedBox(height: 16),
+              Text('Or enter this secret: $secret'),
+              const SizedBox(height: 24),
+              TextFormField(
+                decoration: const InputDecoration(
+                  hintText: '000000',
+                  labelText: 'Enter 6-digit code',
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                onChanged: (value) async {
+                  if (value.length != 6) return;
+
+                  try {
+                    final challenge = await supabase.auth.mfa
+                        .challenge(factorId: factorId);
+                    
+                    await supabase.auth.mfa.verify(
+                      factorId: factorId,
+                      challengeId: challenge.id,
+                      code: value,
+                    );
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('MFA enabled!')),
+                    );
+                  } catch (error) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: $error')),
+                    );
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+```
+
+## Challenge and Verify
+
+After enrollment, users must verify their MFA code at each login:
+
+```javascript
+// Step 1: User signs in with password
+const { data: signInData, error: signInError } = 
+  await supabase.auth.signInWithPassword({
+    email: 'user@example.com',
+    password: 'password',
+  })
+
+if (signInError) {
+  console.error('Sign in error:', signInError)
+  return
+}
+
+// Step 2: Check if MFA is required
+const { currentLevel, nextLevel } = 
+  supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+
+if (nextLevel === 'aal2') {
+  // Step 3: Get user's enrolled factors
+  const { data: factors } = await supabase.auth.mfa.listFactors()
+  const totpFactor = factors.totp[0]
+
+  // Step 4: Create challenge
+  const { data: challengeData } = await supabase.auth.mfa.challenge({
+    factorId: totpFactor.id,
+  })
+
+  // Step 5: Prompt user for code and verify
+  const code = prompt('Enter your 6-digit MFA code:')
+  
+  const { error: verifyError } = await supabase.auth.mfa.verify({
+    factorId: totpFactor.id,
+    challengeId: challengeData.id,
+    code,
+  })
+
+  if (verifyError) {
+    console.error('Invalid MFA code')
+  } else {
+    console.log('MFA verification successful!')
+  }
+}
+```
+
+## List Enrolled Factors
+
+```javascript
+const { data, error } = await supabase.auth.mfa.listFactors()
+
+if (data) {
+  console.log('TOTP factors:', data.totp)
+  console.log('All factors:', data.all)
+  
+  data.totp.forEach(factor => {
+    console.log('Factor ID:', factor.id)
+    console.log('Status:', factor.status)
+    console.log('Created:', factor.created_at)
+  })
+}
+```
+
+## Unenroll MFA
+
+Remove MFA from a user's account:
+
+```javascript
+const { data, error } = await supabase.auth.mfa.unenroll({
+  factorId: 'factor-id-here',
+})
+
+if (error) {
+  console.error('Error unenrolling:', error.message)
+} else {
+  console.log('MFA removed successfully')
+}
+```
+
+## Enforce MFA with RLS
+
+Require AAL2 for sensitive operations:
+
+```sql
+create policy "Require MFA for sensitive data"
+on sensitive_table
+for all
+using (
+  auth.jwt() ->> 'aal' = 'aal2'
+);
+```
+
+## MFA in Mobile Apps
+
+### Flutter Complete Flow
+
+```dart
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+final supabase = Supabase.instance.client;
+
+// Check AAL after sign in
+final assuranceLevel = supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+if (assuranceLevel.currentLevel == AuthenticatorAssuranceLevels.aal1) {
+  // Refresh to check if user has enrolled MFA
+  await supabase.auth.refreshSession();
+  
+  final nextLevel = supabase.auth.mfa
+      .getAuthenticatorAssuranceLevel().nextLevel;
+  
+  if (nextLevel == AuthenticatorAssuranceLevels.aal2) {
+    // User has MFA enrolled, prompt for verification
+    navigateToMFAVerifyPage();
+  } else {
+    // User hasn't enrolled MFA yet
+    navigateToMFAEnrollPage();
+  }
+}
+```
+
+## Error Handling
+
+Common MFA errors:
+
+| Error | Description | Solution |
+|-------|-------------|----------|
+| `mfa_enrollment_not_found` | Factor ID not found | Re-enroll MFA |
+| `invalid_code` | Wrong TOTP code | Check time sync on device |
+| `mfa_challenge_expired` | Challenge expired | Create new challenge |
+| `max_enrolled_factors` | Too many factors | Unenroll unused factors |
+
+## Time Synchronization
+
+<Warning>
+  TOTP codes are time-sensitive. Ensure the user's device clock is synchronized with network time for codes to work correctly.
+</Warning>
+
+## Recovery Codes
+
+<Note>
+  Supabase doesn't currently support recovery codes. Implement your own recovery mechanism or allow users to reset MFA via email verification.
+</Note>
+
+## Testing MFA
+
+For testing, you can use:
+
+- Google Authenticator (mobile)
+- [TOTP Generator Extension](https://chrome.google.com/webstore) (browser)
+- Command line tools like `oathtool`
+
+```bash
+# Generate TOTP code from secret (for testing)
+oathtool --totp --base32 YOUR_SECRET_HERE
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Optional Enrollment" icon="user-check">
+    Make MFA optional initially, encourage adoption over time
+  </Card>
+  
+  <Card title="Clear Instructions" icon="book">
+    Provide step-by-step instructions with screenshots
+  </Card>
+  
+  <Card title="Backup Methods" icon="life-ring">
+    Offer email-based recovery for locked accounts
+  </Card>
+  
+  <Card title="Progressive Security" icon="shield">
+    Require MFA only for sensitive operations
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Row Level Security" icon="database" href="/auth/row-level-security">
+    Learn how to protect data with RLS policies
+  </Card>
+  
+  <Card title="Storage Security" icon="folder" href="/storage/access-control">
+    Secure file uploads and downloads
+  </Card>
+</CardGroup>

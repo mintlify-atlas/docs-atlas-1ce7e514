@@ -1,0 +1,359 @@
+---
+title: 'Storage Overview'
+description: 'Store and serve files with Supabase Storage'
+---
+
+Supabase Storage provides a simple interface to store and serve large files. Built on top of PostgreSQL, it leverages Row Level Security for access control.
+
+## Features
+
+Supabase Storage offers powerful file management capabilities:
+
+- **Unlimited Storage**: Store any number of files of any size
+- **CDN Integration**: Files are automatically cached for fast delivery
+- **Image Transformations**: Resize, crop, and optimize images on-the-fly
+- **Resumable Uploads**: Upload large files with automatic retry
+- **Access Control**: Secure files with Row Level Security policies
+- **Public and Private Buckets**: Control file visibility
+- **S3 Compatible**: Use S3-compatible tools and libraries
+
+## Core Concepts
+
+### Buckets
+
+Buckets are containers for organizing files, similar to folders:
+
+```javascript
+// Create a bucket
+const { data, error } = await supabase
+  .storage
+  .createBucket('avatars', {
+    public: true,
+    fileSizeLimit: 1024 * 1024, // 1MB
+  })
+```
+
+### Objects
+
+Objects are the individual files stored in buckets:
+
+```javascript
+// Upload a file
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .upload('user-123.png', file)
+```
+
+### Public vs Private Buckets
+
+- **Public Buckets**: Files are accessible via public URLs without authentication
+- **Private Buckets**: Files require authentication and RLS policies
+
+## Quick Start
+
+### Create a Bucket
+
+<Tabs>
+  <Tab title="Dashboard">
+    1. Go to Storage in your Supabase dashboard
+    2. Click "New bucket"
+    3. Enter a name and configure settings
+    4. Click "Create bucket"
+  </Tab>
+  
+  <Tab title="JavaScript">
+    ```javascript
+    const { data, error } = await supabase
+      .storage
+      .createBucket('documents', {
+        public: false,
+        allowedMimeTypes: ['application/pdf', 'image/*'],
+        fileSizeLimit: 5242880, // 5MB
+      })
+    ```
+  </Tab>
+  
+  <Tab title="SQL">
+    ```sql
+    insert into storage.buckets (id, name, public)
+    values ('documents', 'documents', false);
+    ```
+  </Tab>
+</Tabs>
+
+### Upload a File
+
+```javascript
+const file = event.target.files[0]
+
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .upload(`public/${file.name}`, file, {
+    cacheControl: '3600',
+    upsert: false
+  })
+
+if (error) {
+  console.error('Upload error:', error.message)
+} else {
+  console.log('File uploaded:', data.path)
+}
+```
+
+### Get Public URL
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('avatars')
+  .getPublicUrl('public/avatar1.png')
+
+console.log('Public URL:', data.publicUrl)
+```
+
+### Download a File
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .download('public/avatar1.png')
+
+if (error) {
+  console.error('Download error:', error.message)
+} else {
+  // data is a Blob
+  const url = URL.createObjectURL(data)
+  window.open(url)
+}
+```
+
+## Storage API
+
+<CodeGroup>
+
+```javascript Upload
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .upload('space-cat.png', file)
+```
+
+```javascript Download
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .download('space-cat.png')
+```
+
+```javascript List Files
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .list('public', {
+    limit: 100,
+    offset: 0,
+    sortBy: { column: 'name', order: 'asc' },
+  })
+```
+
+```javascript Delete
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .remove(['avatar1.png', 'avatar2.png'])
+```
+
+```javascript Move
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .move('public/avatar1.png', 'private/avatar1.png')
+```
+
+</CodeGroup>
+
+## File Organization
+
+Organize files using folder structures:
+
+```javascript
+// Upload to nested folder
+await supabase
+  .storage
+  .from('documents')
+  .upload('users/123/reports/2024-q1.pdf', file)
+
+// List files in a folder
+const { data } = await supabase
+  .storage
+  .from('documents')
+  .list('users/123/reports')
+```
+
+## File Metadata
+
+Set custom metadata on uploads:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .upload('avatar.png', file, {
+    cacheControl: '3600',
+    contentType: 'image/png',
+    upsert: true,
+  })
+```
+
+## Storage Limits
+
+Configure limits per bucket:
+
+- **File Size Limit**: Maximum size per file
+- **Allowed MIME Types**: Restrict file types
+- **Total Bucket Size**: Maximum total storage
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .createBucket('uploads', {
+    public: false,
+    fileSizeLimit: 10485760, // 10MB
+    allowedMimeTypes: [
+      'image/png',
+      'image/jpeg',
+      'application/pdf'
+    ],
+  })
+```
+
+## Security
+
+### RLS Policies for Storage
+
+Control access to files using PostgreSQL policies:
+
+```sql
+-- Allow users to upload to their own folder
+create policy "Users can upload to own folder"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+
+-- Allow users to read their own files
+create policy "Users can read own files"
+on storage.objects
+for select
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+```
+
+### Signed URLs
+
+Generate temporary URLs for private files:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('private-documents')
+  .createSignedUrl('contract.pdf', 60) // Expires in 60 seconds
+
+if (data) {
+  console.log('Signed URL:', data.signedUrl)
+  console.log('Expires at:', data.expiresAt)
+}
+```
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="User Avatars" icon="user-circle">
+    Store and serve user profile pictures with public access
+  </Card>
+  
+  <Card title="Document Storage" icon="file">
+    Store private documents with user-specific access control
+  </Card>
+  
+  <Card title="Media Library" icon="images">
+    Build a media library with image transformations
+  </Card>
+  
+  <Card title="File Sharing" icon="share">
+    Share files via temporary signed URLs
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Unique Filenames">
+    Prevent overwrites by using UUIDs or timestamps in filenames:
+    ```javascript
+    const fileName = `${Date.now()}-${file.name}`
+    ```
+  </Accordion>
+  
+  <Accordion title="Set Cache Headers">
+    Configure appropriate cache control for better performance:
+    ```javascript
+    cacheControl: '3600' // 1 hour
+    ```
+  </Accordion>
+  
+  <Accordion title="Validate File Types">
+    Always validate file types on both client and server:
+    ```javascript
+    if (!file.type.startsWith('image/')) {
+      throw new Error('Only images allowed')
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Organize with Folders">
+    Use folder structures to organize files logically:
+    ```
+    avatars/
+      users/
+        {user-id}/
+          profile.jpg
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Monitoring
+
+Track storage usage in your dashboard:
+
+- Total storage used
+- Files per bucket
+- Bandwidth consumption
+- API requests
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Upload Files" icon="upload" href="/storage/uploads">
+    Learn about different upload methods
+  </Card>
+  
+  <Card title="Download Files" icon="download" href="/storage/downloads">
+    Retrieve and serve files
+  </Card>
+  
+  <Card title="Image Transformations" icon="wand-magic-sparkles" href="/storage/image-transformations">
+    Resize and optimize images
+  </Card>
+  
+  <Card title="Access Control" icon="shield" href="/storage/access-control">
+    Secure files with RLS policies
+  </Card>
+</CardGroup>

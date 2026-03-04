@@ -1,0 +1,455 @@
+---
+title: 'Authentication Examples'
+description: 'Code examples for implementing authentication with Supabase'
+icon: 'shield'
+---
+
+Explore authentication examples covering email/password, OAuth, magic links, multi-factor authentication, and more.
+
+## Email/Password Authentication
+
+### Basic Sign Up and Sign In
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+// Sign up with email and password
+async function signUp(email: string, password: string) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+  })
+  
+  if (error) throw error
+  return data
+}
+
+// Sign in with email and password
+async function signIn(email: string, password: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
+  
+  if (error) throw error
+  return data
+}
+
+// Sign out
+async function signOut() {
+  const { error } = await supabase.auth.signOut()
+  if (error) throw error
+}
+
+// Get current user
+function getCurrentUser() {
+  return supabase.auth.getUser()
+}
+
+// Listen for auth state changes
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log(event, session)
+})
+```
+
+### Password Reset
+
+```typescript
+// Request password reset
+async function resetPassword(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://example.com/update-password',
+  })
+  
+  if (error) throw error
+}
+
+// Update password (after clicking reset link)
+async function updatePassword(newPassword: string) {
+  const { error } = await supabase.auth.updateUser({
+    password: newPassword,
+  })
+  
+  if (error) throw error
+}
+```
+
+## OAuth Authentication
+
+### Sign in with OAuth Providers
+
+```typescript
+// Sign in with Google
+async function signInWithGoogle() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  })
+  
+  if (error) throw error
+}
+
+// Sign in with GitHub
+async function signInWithGitHub() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'github',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+      scopes: 'repo gist',
+    },
+  })
+  
+  if (error) throw error
+}
+
+// Other providers
+const providers = [
+  'apple',
+  'azure',
+  'bitbucket',
+  'discord',
+  'facebook',
+  'gitlab',
+  'linkedin',
+  'notion',
+  'slack',
+  'spotify',
+  'twitter',
+  'workos',
+]
+```
+
+### OAuth Callback Handler (Next.js)
+
+```typescript
+// app/auth/callback/route.ts
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/'
+
+  if (code) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    
+    if (!error) {
+      return NextResponse.redirect(`${origin}${next}`)
+    }
+  }
+
+  return NextResponse.redirect(`${origin}/auth/auth-code-error`)
+}
+```
+
+## Magic Link Authentication
+
+### Passwordless Sign In
+
+```typescript
+// Send magic link
+async function sendMagicLink(email: string) {
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: 'https://example.com/auth/callback',
+    },
+  })
+  
+  if (error) throw error
+}
+
+// Send magic link to phone
+async function sendSMSMagicLink(phone: string) {
+  const { error } = await supabase.auth.signInWithOtp({
+    phone,
+  })
+  
+  if (error) throw error
+}
+```
+
+## Multi-Factor Authentication (MFA)
+
+### TOTP (Time-based One-Time Password)
+
+```typescript
+// Enroll in MFA
+async function enrollMFA() {
+  const { data, error } = await supabase.auth.mfa.enroll({
+    factorType: 'totp',
+  })
+  
+  if (error) throw error
+  
+  // Show QR code to user
+  const { id, qr_code, secret } = data
+  return { id, qr_code, secret }
+}
+
+// Verify enrollment
+async function verifyMFAEnrollment(factorId: string, code: string) {
+  const { data, error } = await supabase.auth.mfa.challengeAndVerify({
+    factorId,
+    code,
+  })
+  
+  if (error) throw error
+  return data
+}
+
+// Sign in with MFA
+async function signInWithMFA(email: string, password: string) {
+  // First, sign in normally
+  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
+  
+  if (signInError) throw signInError
+  
+  // Then verify MFA
+  const factors = await supabase.auth.mfa.listFactors()
+  if (factors.data?.totp.length) {
+    const factorId = factors.data.totp[0].id
+    
+    // Create challenge
+    const { data: challenge } = await supabase.auth.mfa.challenge({ factorId })
+    
+    // User enters code, then verify
+    const code = prompt('Enter your 6-digit code:')
+    const { data, error } = await supabase.auth.mfa.verify({
+      factorId,
+      challengeId: challenge!.id,
+      code: code!,
+    })
+    
+    if (error) throw error
+    return data
+  }
+}
+
+// Unenroll from MFA
+async function unenrollMFA(factorId: string) {
+  const { error } = await supabase.auth.mfa.unenroll({ factorId })
+  if (error) throw error
+}
+```
+
+## Phone Authentication
+
+```typescript
+// Sign up with phone
+async function signUpWithPhone(phone: string, password: string) {
+  const { data, error } = await supabase.auth.signUp({
+    phone,
+    password,
+  })
+  
+  if (error) throw error
+  return data
+}
+
+// Verify phone with OTP
+async function verifyPhone(phone: string, token: string) {
+  const { data, error } = await supabase.auth.verifyOtp({
+    phone,
+    token,
+    type: 'sms',
+  })
+  
+  if (error) throw error
+  return data
+}
+```
+
+## Session Management
+
+```typescript
+// Get current session
+async function getSession() {
+  const { data: { session } } = await supabase.auth.getSession()
+  return session
+}
+
+// Refresh session
+async function refreshSession() {
+  const { data, error } = await supabase.auth.refreshSession()
+  if (error) throw error
+  return data.session
+}
+
+// Set session (for SSR)
+async function setSession(accessToken: string, refreshToken: string) {
+  const { data, error } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  })
+  
+  if (error) throw error
+  return data
+}
+```
+
+## User Metadata
+
+```typescript
+// Update user metadata
+async function updateUserMetadata(metadata: any) {
+  const { data, error } = await supabase.auth.updateUser({
+    data: metadata,
+  })
+  
+  if (error) throw error
+  return data
+}
+
+// Example: Update user profile
+async function updateProfile(profile: { name: string; avatar_url: string }) {
+  const { data, error } = await supabase.auth.updateUser({
+    data: {
+      name: profile.name,
+      avatar_url: profile.avatar_url,
+    },
+  })
+  
+  if (error) throw error
+  return data
+}
+```
+
+## Server-Side Authentication (Next.js)
+
+### Server Component
+
+```typescript
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export default async function ProtectedPage() {
+  const supabase = await createClient()
+  
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    redirect('/login')
+  }
+  
+  return <div>Hello {user.email}</div>
+}
+```
+
+### Server Action
+
+```typescript
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+
+export async function signIn(formData: FormData) {
+  const supabase = await createClient()
+  
+  const credentials = {
+    email: formData.get('email') as string,
+    password: formData.get('password') as string,
+  }
+  
+  const { error } = await supabase.auth.signInWithPassword(credentials)
+  
+  if (error) {
+    redirect('/error')
+  }
+  
+  revalidatePath('/', 'layout')
+  redirect('/dashboard')
+}
+```
+
+## React Hook Examples
+
+```typescript
+import { useEffect, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
+import type { User } from '@supabase/supabase-js'
+
+const supabase = createClient(url, key)
+
+function useAuth() {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+  
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
+    
+    // Listen for changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null)
+      }
+    )
+    
+    return () => subscription.unsubscribe()
+  }, [])
+  
+  return { user, loading }
+}
+
+// Usage
+function MyComponent() {
+  const { user, loading } = useAuth()
+  
+  if (loading) return <div>Loading...</div>
+  if (!user) return <div>Please sign in</div>
+  
+  return <div>Welcome {user.email}</div>
+}
+```
+
+## Full Example Apps
+
+<CardGroup cols={2}>
+  <Card title="Next.js Auth Example" icon="N" href="https://github.com/supabase/supabase/tree/master/examples/auth/nextjs">
+    Complete Next.js authentication example
+  </Card>
+  <Card title="Flutter MFA Example" icon="mobile" href="https://github.com/supabase/supabase/tree/master/examples/auth/flutter-mfa">
+    Flutter app with multi-factor authentication
+  </Card>
+  <Card title="React Auth Example" icon="react" href="https://github.com/supabase/supabase/tree/master/examples/auth">
+    React authentication patterns
+  </Card>
+  <Card title="Expo Social Auth" icon="mobile" href="https://github.com/supabase/supabase/tree/master/examples/auth/expo-social-auth">
+    React Native with social providers
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Auth Documentation" icon="book" href="/auth/overview">
+    Learn more about authentication
+  </Card>
+  <Card title="User Management Tutorial" icon="users" href="/guides/user-management">
+    Build user profiles
+  </Card>
+  <Card title="Row Level Security" icon="lock" href="/auth/row-level-security">
+    Secure your data
+  </Card>
+  <Card title="Database Examples" icon="database" href="/examples/database">
+    Explore database patterns
+  </Card>
+</CardGroup>

@@ -1,0 +1,488 @@
+---
+title: 'Python SDK'
+description: 'Complete reference for the Supabase Python client library'
+icon: 'python'
+---
+
+## Installation
+
+Install the Supabase Python client library:
+
+```bash
+pip install supabase
+```
+
+## Initializing
+
+Create a Supabase client to interact with your database.
+
+```python
+from supabase import create_client, Client
+import os
+
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
+```
+
+<ParamField path="supabase_url" type="str" required>
+  The unique Supabase URL for your project.
+</ParamField>
+
+<ParamField path="supabase_key" type="str" required>
+  The Supabase anon key or service role key for your project.
+</ParamField>
+
+<ParamField path="options" type="ClientOptions">
+  Optional configuration parameters.
+  
+  <Expandable title="options properties">
+    <ParamField path="schema" type="str" default="public">
+      The database schema to use.
+    </ParamField>
+    
+    <ParamField path="headers" type="dict">
+      Custom headers to send with every request.
+    </ParamField>
+    
+    <ParamField path="auto_refresh_token" type="bool" default="True">
+      Automatically refresh the token before expiring.
+    </ParamField>
+    
+    <ParamField path="persist_session" type="bool" default="True">
+      Whether to persist the user session.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Database Operations
+
+### Select Data
+
+Query data from your tables.
+
+```python
+response = supabase.table('countries').select('*').execute()
+```
+
+<ResponseField name="data" type="list">
+  The returned rows from the query.
+</ResponseField>
+
+<ResponseField name="count" type="int | None">
+  The total count of rows (if count option is specified).
+</ResponseField>
+
+#### Select with Filters
+
+```python
+response = supabase.table('countries') \
+    .select('name, capital') \
+    .eq('id', 1) \
+    .single() \
+    .execute()
+```
+
+#### Select with Joins
+
+```python
+response = supabase.table('countries') \
+    .select('name, cities(name, population)') \
+    .execute()
+```
+
+#### Common Filters
+
+```python
+# Equal to
+response = supabase.table('countries').select('*').eq('name', 'Albania').execute()
+
+# Not equal to
+response = supabase.table('countries').select('*').neq('name', 'Albania').execute()
+
+# Greater than
+response = supabase.table('countries').select('*').gt('population', 1000000).execute()
+
+# Less than
+response = supabase.table('countries').select('*').lt('population', 1000000).execute()
+
+# Like (pattern matching)
+response = supabase.table('countries').select('*').like('name', '%Alba%').execute()
+
+# In list
+response = supabase.table('countries').select('*').in_('name', ['Albania', 'Algeria']).execute()
+
+# Is null
+response = supabase.table('countries').select('*').is_('capital', 'null').execute()
+```
+
+### Insert Data
+
+Insert rows into your tables.
+
+```python
+data = supabase.table('countries').insert({
+    'name': 'Denmark',
+    'code': 'DK'
+}).execute()
+```
+
+<ParamField path="values" type="dict | list[dict]" required>
+  The values to insert. Can be a single dictionary or a list of dictionaries.
+</ParamField>
+
+<ResponseField name="data" type="list">
+  The inserted rows.
+</ResponseField>
+
+#### Insert Multiple Rows
+
+```python
+data = supabase.table('countries').insert([
+    {'name': 'Denmark', 'code': 'DK'},
+    {'name': 'Norway', 'code': 'NO'}
+]).execute()
+```
+
+### Update Data
+
+Update existing rows in your tables.
+
+```python
+data = supabase.table('countries') \
+    .update({'name': 'Australia'}) \
+    .eq('id', 1) \
+    .execute()
+```
+
+<ParamField path="values" type="dict" required>
+  The values to update.
+</ParamField>
+
+### Upsert Data
+
+Insert or update rows based on unique constraints.
+
+```python
+data = supabase.table('countries') \
+    .upsert({'id': 1, 'name': 'Australia'}) \
+    .execute()
+```
+
+<ParamField path="on_conflict" type="str">
+  Specify which columns should be used for the conflict resolution.
+</ParamField>
+
+### Delete Data
+
+Delete rows from your tables.
+
+```python
+data = supabase.table('countries') \
+    .delete() \
+    .eq('id', 1) \
+    .execute()
+```
+
+## Authentication
+
+### Sign Up
+
+Create a new user account.
+
+```python
+response = supabase.auth.sign_up({
+    'email': 'example@email.com',
+    'password': 'example-password'
+})
+```
+
+<ParamField path="email" type="str" required>
+  The user's email address.
+</ParamField>
+
+<ParamField path="password" type="str" required>
+  The user's password.
+</ParamField>
+
+<ParamField path="options" type="dict">
+  Optional parameters.
+  
+  <Expandable title="options properties">
+    <ParamField path="data" type="dict">
+      Additional user metadata.
+    </ParamField>
+    
+    <ParamField path="email_redirect_to" type="str">
+      A URL to redirect to after signup.
+    </ParamField>
+    
+    <ParamField path="captcha_token" type="str">
+      Captcha token for verification.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="user" type="User | None">
+  The user object.
+</ResponseField>
+
+<ResponseField name="session" type="Session | None">
+  The session object.
+</ResponseField>
+
+### Sign In
+
+Sign in an existing user.
+
+```python
+response = supabase.auth.sign_in_with_password({
+    'email': 'example@email.com',
+    'password': 'example-password'
+})
+```
+
+### Sign Out
+
+Sign out the current user.
+
+```python
+supabase.auth.sign_out()
+```
+
+### Get Session
+
+Get the current session.
+
+```python
+session = supabase.auth.get_session()
+```
+
+<ResponseField name="session" type="Session | None">
+  The current session object or None if no active session.
+</ResponseField>
+
+### Get User
+
+Get the current user.
+
+```python
+user = supabase.auth.get_user()
+```
+
+<ResponseField name="user" type="User | None">
+  The current user object or None if not authenticated.
+</ResponseField>
+
+## Storage
+
+### Upload File
+
+Upload a file to a storage bucket.
+
+```python
+with open('avatar.png', 'rb') as f:
+    response = supabase.storage.from_('avatars').upload(
+        path='public/avatar1.png',
+        file=f,
+        file_options={'content-type': 'image/png'}
+    )
+```
+
+<ParamField path="path" type="str" required>
+  The file path including the file name.
+</ParamField>
+
+<ParamField path="file" type="bytes | BinaryIO" required>
+  The file data to upload.
+</ParamField>
+
+<ParamField path="file_options" type="dict">
+  Upload options.
+  
+  <Expandable title="file_options properties">
+    <ParamField path="cache-control" type="str">
+      Cache control header value.
+    </ParamField>
+    
+    <ParamField path="content-type" type="str">
+      MIME type of the file.
+    </ParamField>
+    
+    <ParamField path="upsert" type="bool" default="False">
+      When True, overwrites existing file with the same path.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Download File
+
+Download a file from storage.
+
+```python
+response = supabase.storage.from_('avatars').download('public/avatar1.png')
+```
+
+<ParamField path="path" type="str" required>
+  The file path to download.
+</ParamField>
+
+<ResponseField name="data" type="bytes">
+  The file data as bytes.
+</ResponseField>
+
+### List Files
+
+List all files in a bucket.
+
+```python
+files = supabase.storage.from_('avatars').list('public', {
+    'limit': 100,
+    'offset': 0,
+    'sortBy': {'column': 'name', 'order': 'asc'}
+})
+```
+
+### Delete Files
+
+Delete files from storage.
+
+```python
+response = supabase.storage.from_('avatars').remove([
+    'public/avatar1.png',
+    'public/avatar2.png'
+])
+```
+
+### Get Public URL
+
+Get the public URL for a file.
+
+```python
+url = supabase.storage.from_('avatars').get_public_url('public/avatar1.png')
+print(url)
+```
+
+## Realtime
+
+### Subscribe to Changes
+
+Listen to database changes in realtime.
+
+```python
+def on_change(payload):
+    print('Change received!', payload)
+
+supabase.table('countries') \
+    .on('*', on_change) \
+    .subscribe()
+```
+
+<ParamField path="event" type="str" required>
+  The database event to listen for: `INSERT`, `UPDATE`, `DELETE`, or `*` for all.
+</ParamField>
+
+<ParamField path="callback" type="Callable" required>
+  Function to call when an event occurs.
+</ParamField>
+
+### Unsubscribe
+
+Stop listening to changes.
+
+```python
+supabase.table('countries').unsubscribe()
+```
+
+## Edge Functions
+
+### Invoke Function
+
+Invoke a Supabase Edge Function.
+
+```python
+response = supabase.functions.invoke(
+    'hello-world',
+    invoke_options={'body': {'name': 'Functions'}}
+)
+```
+
+<ParamField path="function_name" type="str" required>
+  The name of the Edge Function to invoke.
+</ParamField>
+
+<ParamField path="invoke_options" type="dict">
+  Function invocation options.
+  
+  <Expandable title="invoke_options properties">
+    <ParamField path="body" type="dict">
+      The request body to send to the function.
+    </ParamField>
+    
+    <ParamField path="headers" type="dict">
+      Custom headers to send with the request.
+    </ParamField>
+    
+    <ParamField path="method" type="str" default="POST">
+      HTTP method to use.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="data" type="any">
+  The response data from the function.
+</ResponseField>
+
+## Type Hints
+
+The Python client supports type hints:
+
+```python
+from supabase import Client, create_client
+from typing import List, Dict
+
+supabase: Client = create_client(url, key)
+
+response = supabase.table('countries').select('*').execute()
+data: List[Dict] = response.data
+```
+
+## Error Handling
+
+Handle errors using try-except blocks:
+
+```python
+try:
+    response = supabase.table('countries').select('*').execute()
+    data = response.data
+except Exception as e:
+    print(f'Error: {e}')
+```
+
+## Async Support
+
+Use the async client for asynchronous operations:
+
+```python
+import asyncio
+from supabase import create_async_client
+
+async def main():
+    supabase = await create_async_client(url, key)
+    response = await supabase.table('countries').select('*').execute()
+    print(response.data)
+
+asyncio.run(main())
+```
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/supabase/supabase-py">
+    View the source code and contribute
+  </Card>
+  
+  <Card title="PyPI Package" icon="python" href="https://pypi.org/project/supabase/">
+    View package details and versions
+  </Card>
+</CardGroup>

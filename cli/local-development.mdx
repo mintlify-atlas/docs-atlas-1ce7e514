@@ -1,0 +1,472 @@
+---
+title: 'Local Development with CLI'
+description: 'Run the complete Supabase stack on your local machine'
+---
+
+The Supabase CLI enables you to run the entire Supabase stack locally, giving you a complete development environment that mirrors production.
+
+## Why Develop Locally?
+
+Developing locally with the Supabase CLI provides several advantages:
+
+- **Faster development**: Make changes instantly without network latency
+- **Offline development**: Work without internet connectivity
+- **Cost effective**: No charges for development API calls
+- **Isolated testing**: Test breaking changes safely
+- **Version control**: Track database schema in Git
+- **Team collaboration**: Share migrations across your team
+
+## Getting Started
+
+### Initialize a Project
+
+Create a new Supabase project in your current directory:
+
+```bash
+supabase init
+```
+
+This creates a `supabase` folder with the following structure:
+
+```
+supabase/
+├── config.toml          # Project configuration
+├── seed.sql             # Seed data for development
+└── migrations/          # Database migration files
+```
+
+<Tip>
+It's safe to commit the entire `supabase` folder to version control.
+</Tip>
+
+### Start Local Services
+
+Launch all Supabase services:
+
+```bash
+supabase start
+```
+
+The first run takes several minutes as Docker downloads all required images (approximately 2-3 GB).
+
+### Access Your Services
+
+Once started, you'll see output with URLs and credentials:
+
+```bash
+Started supabase local development setup.
+
+         API URL: http://localhost:54321
+          DB URL: postgresql://postgres:postgres@localhost:54322/postgres
+      Studio URL: http://localhost:54323
+     Mailpit URL: http://localhost:54324
+        anon key: eyJh......
+service_role key: eyJh......
+```
+
+<Warning>
+These credentials are for local development only. Never use them in production.
+</Warning>
+
+## Available Services
+
+### Studio (Database Management)
+
+**URL**: `http://localhost:54323`
+
+Supabase Studio provides a web interface for managing your database:
+
+- Visual table editor
+- SQL editor with autocomplete
+- Query history
+- Database relationships viewer
+- RLS policy builder
+- Real-time data viewer
+
+<Frame>
+  <img src="/images/local-studio.png" alt="Supabase Studio running locally" />
+</Frame>
+
+### PostgreSQL Database
+
+**Connection String**: `postgresql://postgres:postgres@localhost:54322/postgres`
+
+Connect to your local Postgres instance using any client:
+
+<Tabs>
+  <Tab title="psql">
+    ```bash
+    psql 'postgresql://postgres:postgres@localhost:54322/postgres'
+    ```
+  </Tab>
+  
+  <Tab title="pgAdmin">
+    Configure a new connection in pgAdmin:
+    - Host: `localhost`
+    - Port: `54322`
+    - Database: `postgres`
+    - Username: `postgres`
+    - Password: `postgres`
+  </Tab>
+  
+  <Tab title="Edge Functions">
+    When connecting from Edge Functions, replace `localhost` with `host.docker.internal`:
+    
+    ```typescript
+    const { createClient } = require('@supabase/supabase-js')
+    
+    const supabaseUrl = 'http://host.docker.internal:54321'
+    const supabaseKey = process.env.SUPABASE_ANON_KEY
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    ```
+  </Tab>
+</Tabs>
+
+### API Gateway
+
+**Base URL**: `http://localhost:54321`
+
+Kong serves as the API gateway, routing requests to different services:
+
+- **REST API**: `http://localhost:54321/rest/v1/`
+- **Realtime**: `http://localhost:54321/realtime/v1/`
+- **Storage**: `http://localhost:54321/storage/v1/`
+- **Auth**: `http://localhost:54321/auth/v1/`
+
+#### Using the API
+
+When accessing services without client libraries, pass the anon key as an Authorization header:
+
+```bash
+curl 'http://localhost:54321/rest/v1/todos' \
+  -H "apikey: <anon-key>" \
+  -H "Authorization: Bearer <anon-key>"
+```
+
+<Info>
+The anon key is displayed when you run `supabase start`.
+</Info>
+
+### Mailpit (Email Testing)
+
+**URL**: `http://localhost:54324`
+
+Mailpit captures all emails sent by Supabase Auth, allowing you to test:
+
+- Email verification flows
+- Password reset emails
+- Magic link authentication
+- Email change confirmations
+
+<Frame>
+  <img src="/images/mailpit-interface.png" alt="Mailpit email testing interface" />
+</Frame>
+
+## Configuration
+
+Customize your local environment by editing `supabase/config.toml`:
+
+### Change Ports
+
+```toml config.toml
+[api]
+port = 54321
+
+[db]
+port = 54322
+
+[studio]
+port = 54323
+
+[inbucket]
+port = 54324
+```
+
+### Configure Auth Providers
+
+```toml config.toml
+[auth.external.github]
+enabled = true
+client_id = "your-client-id"
+secret = "your-client-secret"
+redirect_uri = "http://localhost:54321/auth/v1/callback"
+```
+
+### Set JWT Secrets
+
+```toml config.toml
+[auth]
+jwt_secret = "your-super-secret-jwt-token-with-at-least-32-characters-long"
+jwt_expiry = 3600
+```
+
+<Note>
+Changes to `config.toml` require restarting local services: `supabase stop && supabase start`
+</Note>
+
+## Managing Local Services
+
+### Check Status
+
+View the status of all running services:
+
+```bash
+supabase status
+```
+
+Output:
+
+```
+supabase local development setup is running.
+
+         API URL: http://localhost:54321
+          DB URL: postgresql://postgres:postgres@localhost:54322/postgres
+      Studio URL: http://localhost:54323
+```
+
+### Stop Services
+
+Stop all services without deleting data:
+
+```bash
+supabase stop
+```
+
+This preserves your database state between sessions.
+
+### Stop and Reset
+
+Stop services and delete all data:
+
+```bash
+supabase stop --no-backup
+```
+
+<Warning>
+This permanently deletes all local data. Use with caution.
+</Warning>
+
+### Restart Services
+
+Restart all services:
+
+```bash
+supabase stop && supabase start
+```
+
+## Working with Your Application
+
+### Client Libraries
+
+Configure your Supabase client to use local services:
+
+<Tabs>
+  <Tab title="JavaScript">
+    ```javascript
+    import { createClient } from '@supabase/supabase-js'
+    
+    const supabaseUrl = 'http://localhost:54321'
+    const supabaseAnonKey = '<your-anon-key>'
+    
+    export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    from supabase import create_client, Client
+    
+    url = "http://localhost:54321"
+    key = "<your-anon-key>"
+    supabase: Client = create_client(url, key)
+    ```
+  </Tab>
+  
+  <Tab title="Dart/Flutter">
+    ```dart
+    import 'package:supabase_flutter/supabase_flutter.dart';
+    
+    await Supabase.initialize(
+      url: 'http://localhost:54321',
+      anonKey: '<your-anon-key>',
+    );
+    
+    final supabase = Supabase.instance.client;
+    ```
+  </Tab>
+</Tabs>
+
+### Environment Variables
+
+Use environment variables to switch between local and production:
+
+```bash .env.local
+NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<local-anon-key>
+```
+
+```bash .env.production
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<production-anon-key>
+```
+
+## Seeding Data
+
+Create seed data for consistent development:
+
+### Create Seed File
+
+Edit `supabase/seed.sql`:
+
+```sql seed.sql
+-- Create test users
+INSERT INTO auth.users (id, email)
+VALUES 
+  ('d9a1b08e-7c5d-4f1d-9f48-3e7c8b2a1d56', 'test@example.com');
+
+-- Seed application data
+INSERT INTO public.profiles (id, username, full_name)
+VALUES 
+  ('d9a1b08e-7c5d-4f1d-9f48-3e7c8b2a1d56', 'testuser', 'Test User');
+
+INSERT INTO public.todos (user_id, title, completed)
+VALUES
+  ('d9a1b08e-7c5d-4f1d-9f48-3e7c8b2a1d56', 'First todo', false),
+  ('d9a1b08e-7c5d-4f1d-9f48-3e7c8b2a1d56', 'Second todo', true);
+```
+
+### Apply Seed Data
+
+Reset your database to apply migrations and seed data:
+
+```bash
+supabase db reset
+```
+
+This will:
+1. Drop the database
+2. Reapply all migrations
+3. Run the seed.sql file
+
+## Testing and Linting
+
+### Test Your Database
+
+Run database tests using pgTAP:
+
+```bash
+supabase test db
+```
+
+Create test files in `supabase/tests/`:
+
+```sql tests/todos_test.sql
+BEGIN;
+SELECT plan(3);
+
+-- Test table exists
+SELECT has_table('public', 'todos', 'todos table should exist');
+
+-- Test columns
+SELECT has_column('public', 'todos', 'id', 'todos should have id column');
+SELECT has_column('public', 'todos', 'title', 'todos should have title column');
+
+SELECT * FROM finish();
+ROLLBACK;
+```
+
+### Lint Your Database
+
+Check for common issues:
+
+```bash
+supabase db lint
+```
+
+This validates:
+- Correct types for function parameters
+- Unused variables
+- Dead code after RETURN statements
+- Missing RETURN statements
+- SQL injection vulnerabilities
+
+## Logs and Analytics
+
+### View Logs
+
+Local logs are stored in the `_analytics` schema and accessible via Studio.
+
+### Configure Logging
+
+For advanced log analysis, configure the BigQuery backend in your `config.toml`:
+
+```toml config.toml
+[analytics]
+backend = "bigquery"
+```
+
+<Info>
+On macOS/Linux, logs are accessed via `/var/run/docker.sock`. On Windows, ensure `tcp://localhost:2375` is exposed in Docker settings.
+</Info>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Services won't start">
+    **Error**: `Port already in use`
+    
+    **Solution**:
+    - Check for conflicting services: `lsof -i :54321`
+    - Stop other Supabase instances: `supabase stop`
+    - Change ports in `config.toml`
+  </Accordion>
+  
+  <Accordion title="Database connection failed">
+    **Error**: `could not connect to server`
+    
+    **Solution**:
+    - Ensure Docker is running: `docker ps`
+    - Check services status: `supabase status`
+    - Restart services: `supabase stop && supabase start`
+  </Accordion>
+  
+  <Accordion title="Studio not loading">
+    **Error**: Studio page shows connection error
+    
+    **Solution**:
+    - Verify services are running: `supabase status`
+    - Check browser console for errors
+    - Clear browser cache and reload
+    - Try accessing `http://127.0.0.1:54323` instead of `localhost`
+  </Accordion>
+  
+  <Accordion title="Migration errors">
+    **Error**: `migration failed to apply`
+    
+    **Solution**:
+    - Check migration SQL syntax
+    - Review error message for specifics
+    - Test migration individually: `supabase db reset`
+    - Roll back and fix: `supabase db diff -f fix_migration`
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Migrations" icon="database" href="./migrations">
+    Learn to manage schema changes with migrations
+  </Card>
+  
+  <Card title="Testing Guide" icon="flask" href="/development/testing">
+    Set up comprehensive database testing
+  </Card>
+  
+  <Card title="Deploy to Production" icon="rocket" href="./deployment">
+    Push your local project to Supabase Platform
+  </Card>
+  
+  <Card title="CLI Reference" icon="book" href="/api-reference/cli">
+    Explore all available CLI commands
+  </Card>
+</CardGroup>

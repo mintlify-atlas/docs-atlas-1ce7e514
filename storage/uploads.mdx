@@ -1,0 +1,554 @@
+---
+title: 'Upload Files'
+description: 'Upload files to Supabase Storage with standard, resumable, and multipart uploads'
+---
+
+Supabase Storage provides multiple upload methods to handle different file sizes and use cases.
+
+## Standard Upload
+
+For files under 6MB, use the standard upload method:
+
+<CodeGroup>
+
+```javascript JavaScript
+const file = event.target.files[0]
+
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .upload('public/avatar1.png', file)
+
+if (error) {
+  console.error('Error uploading file:', error.message)
+} else {
+  console.log('File uploaded successfully:', data.path)
+}
+```
+
+```typescript TypeScript
+interface UploadResponse {
+  path: string
+  id: string
+  fullPath: string
+}
+
+const uploadFile = async (file: File): Promise<UploadResponse | null> => {
+  const { data, error } = await supabase
+    .storage
+    .from('avatars')
+    .upload(`avatars/${Date.now()}-${file.name}`, file, {
+      cacheControl: '3600',
+      upsert: false
+    })
+
+  if (error) {
+    console.error('Upload error:', error)
+    return null
+  }
+
+  return data
+}
+```
+
+```python Python
+with open('avatar.png', 'rb') as f:
+    res = supabase.storage.from_('avatars').upload(
+        'public/avatar1.png',
+        f,
+        {'content-type': 'image/png'}
+    )
+```
+
+```dart Flutter
+final file = File('path/to/file.jpg');
+final bytes = await file.readAsBytes();
+
+final String path = await supabase
+  .storage
+  .from('avatars')
+  .uploadBinary(
+    'public/avatar1.png',
+    bytes,
+  );
+```
+
+</CodeGroup>
+
+## Upload Options
+
+Customize uploads with various options:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .upload('avatar.png', file, {
+    cacheControl: '3600',        // Cache for 1 hour
+    contentType: 'image/png',    // Set MIME type
+    upsert: false,               // Don't overwrite existing
+    duplex: 'half'               // For larger files
+  })
+```
+
+### Available Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `cacheControl` | string | HTTP Cache-Control header value |
+| `contentType` | string | MIME type of the file |
+| `upsert` | boolean | Overwrite file if it exists |
+| `duplex` | string | Set to 'half' for larger files |
+
+## File Upload Component
+
+Complete React component for file uploads:
+
+```jsx React Component
+import { useState } from 'react'
+import { supabase } from './supabaseClient'
+
+export default function FileUpload() {
+  const [file, setFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0]
+    
+    // Validate file size (5MB limit)
+    if (selectedFile && selectedFile.size > 5 * 1024 * 1024) {
+      alert('File size must be less than 5MB')
+      return
+    }
+    
+    // Validate file type
+    if (selectedFile && !selectedFile.type.startsWith('image/')) {
+      alert('Only image files are allowed')
+      return
+    }
+    
+    setFile(selectedFile)
+  }
+
+  const uploadFile = async () => {
+    if (!file) return
+
+    setUploading(true)
+    setUploadProgress(0)
+
+    try {
+      // Generate unique filename
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Math.random()}.${fileExt}`
+      const filePath = `${fileName}`
+
+      const { data, error } = await supabase
+        .storage
+        .from('avatars')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (error) throw error
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase
+        .storage
+        .from('avatars')
+        .getPublicUrl(filePath)
+
+      console.log('File uploaded:', publicUrl)
+      alert('Upload successful!')
+      
+    } catch (error) {
+      console.error('Error uploading file:', error)
+      alert('Error uploading file')
+    } finally {
+      setUploading(false)
+      setFile(null)
+    }
+  }
+
+  return (
+    <div>
+      <input
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        disabled={uploading}
+      />
+      
+      {file && (
+        <div>
+          <p>Selected: {file.name}</p>
+          <p>Size: {(file.size / 1024).toFixed(2)} KB</p>
+        </div>
+      )}
+      
+      <button
+        onClick={uploadFile}
+        disabled={!file || uploading}
+      >
+        {uploading ? 'Uploading...' : 'Upload'}
+      </button>
+    </div>
+  )
+}
+```
+
+## Resumable Uploads
+
+For files larger than 6MB, use TUS protocol for resumable uploads:
+
+### Using Uppy.js
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <link href="https://releases.transloadit.com/uppy/v3.6.1/uppy.min.css" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="drag-drop-area"></div>
+
+    <script type="module">
+      import { Uppy, Dashboard, Tus } from 'https://releases.transloadit.com/uppy/v3.6.1/uppy.min.mjs'
+
+      const SUPABASE_ANON_KEY = 'your-anon-key'
+      const SUPABASE_PROJECT_ID = 'your-project-id'
+      const STORAGE_BUCKET = 'uploads'
+
+      const supabaseStorageURL = `https://${SUPABASE_PROJECT_ID}.supabase.co/storage/v1/upload/resumable`
+
+      const uppy = new Uppy()
+        .use(Dashboard, {
+          inline: true,
+          target: '#drag-drop-area',
+          showProgressDetails: true,
+        })
+        .use(Tus, {
+          endpoint: supabaseStorageURL,
+          headers: {
+            authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
+          uploadDataDuringCreation: true,
+          chunkSize: 6 * 1024 * 1024,
+          allowedMetaFields: ['bucketName', 'objectName', 'contentType', 'cacheControl'],
+        })
+
+      uppy.on('file-added', (file) => {
+        file.meta = {
+          ...file.meta,
+          bucketName: STORAGE_BUCKET,
+          objectName: file.name,
+          contentType: file.type,
+        }
+      })
+
+      uppy.on('complete', (result) => {
+        console.log('Upload complete:', result.successful)
+      })
+    </script>
+  </body>
+</html>
+```
+
+### Resumable Upload with Signed URLs
+
+```javascript
+// Create signed upload URL (server-side)
+const { data: { signedUrl }, error } = await supabase
+  .storage
+  .from('large-files')
+  .createSignedUploadUrl('video.mp4')
+
+if (error) throw error
+
+// Use signed URL with TUS client
+const upload = new tus.Upload(file, {
+  endpoint: signedUrl,
+  chunkSize: 6 * 1024 * 1024, // 6MB chunks
+  retryDelays: [0, 1000, 3000, 5000],
+  metadata: {
+    filename: file.name,
+    filetype: file.type,
+  },
+  onError: (error) => {
+    console.error('Upload failed:', error)
+  },
+  onProgress: (bytesUploaded, bytesTotal) => {
+    const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(2)
+    console.log(`Progress: ${percentage}%`)
+  },
+  onSuccess: () => {
+    console.log('Upload complete!')
+  },
+})
+
+upload.start()
+```
+
+## Upload from URL
+
+Download from a URL and upload to Storage:
+
+```javascript
+async function uploadFromUrl(imageUrl, fileName) {
+  // Fetch the image
+  const response = await fetch(imageUrl)
+  const blob = await response.blob()
+
+  // Upload to Supabase
+  const { data, error } = await supabase
+    .storage
+    .from('images')
+    .upload(fileName, blob, {
+      contentType: blob.type,
+    })
+
+  if (error) throw error
+  return data
+}
+
+// Usage
+await uploadFromUrl(
+  'https://example.com/image.jpg',
+  'downloaded-image.jpg'
+)
+```
+
+## Upload Base64 Image
+
+Convert and upload base64 encoded images:
+
+```javascript
+function base64ToBlob(base64, mimeType) {
+  const byteCharacters = atob(base64.split(',')[1])
+  const byteNumbers = new Array(byteCharacters.length)
+  
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i)
+  }
+  
+  const byteArray = new Uint8Array(byteNumbers)
+  return new Blob([byteArray], { type: mimeType })
+}
+
+async function uploadBase64Image(base64Data, fileName) {
+  const blob = base64ToBlob(base64Data, 'image/png')
+  
+  const { data, error } = await supabase
+    .storage
+    .from('images')
+    .upload(fileName, blob)
+
+  if (error) throw error
+  return data
+}
+
+// Usage
+const base64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg...'
+await uploadBase64Image(base64, 'canvas-export.png')
+```
+
+## Drag and Drop Upload
+
+```jsx React Drag & Drop
+import { useState, useCallback } from 'react'
+import { useDropzone } from 'react-dropzone'
+import { supabase } from './supabaseClient'
+
+export default function DragDropUpload() {
+  const [files, setFiles] = useState([])
+
+  const onDrop = useCallback(async (acceptedFiles) => {
+    const uploadPromises = acceptedFiles.map(async (file) => {
+      const fileName = `${Date.now()}-${file.name}`
+      
+      const { data, error } = await supabase
+        .storage
+        .from('uploads')
+        .upload(fileName, file)
+
+      if (error) {
+        console.error('Upload error:', error)
+        return null
+      }
+
+      return { fileName, path: data.path }
+    })
+
+    const results = await Promise.all(uploadPromises)
+    setFiles(results.filter(Boolean))
+  }, [])
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/*': ['.png', '.jpg', '.jpeg', '.gif']
+    },
+    maxSize: 5242880, // 5MB
+  })
+
+  return (
+    <div
+      {...getRootProps()}
+      style={{
+        border: '2px dashed #ccc',
+        padding: '20px',
+        textAlign: 'center',
+        cursor: 'pointer'
+      }}
+    >
+      <input {...getInputProps()} />
+      {isDragActive ? (
+        <p>Drop files here...</p>
+      ) : (
+        <p>Drag and drop files, or click to select</p>
+      )}
+      
+      {files.length > 0 && (
+        <div>
+          <h3>Uploaded Files:</h3>
+          <ul>
+            {files.map((file, i) => (
+              <li key={i}>{file.fileName}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+## Upload Multiple Files
+
+```javascript
+async function uploadMultipleFiles(files) {
+  const uploadPromises = Array.from(files).map(async (file) => {
+    const fileName = `${Date.now()}-${file.name}`
+    
+    const { data, error } = await supabase
+      .storage
+      .from('uploads')
+      .upload(fileName, file)
+
+    if (error) {
+      console.error(`Error uploading ${file.name}:`, error)
+      return { file: file.name, success: false, error }
+    }
+
+    return { file: file.name, success: true, data }
+  })
+
+  const results = await Promise.all(uploadPromises)
+  
+  const successful = results.filter(r => r.success)
+  const failed = results.filter(r => !r.success)
+  
+  return { successful, failed }
+}
+
+// Usage
+const fileInput = document.querySelector('input[type="file"]')
+const { successful, failed } = await uploadMultipleFiles(fileInput.files)
+
+console.log(`Uploaded: ${successful.length}, Failed: ${failed.length}`)
+```
+
+## Update Existing File
+
+Overwrite an existing file:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .upload('avatar.png', file, {
+    cacheControl: '3600',
+    upsert: true // Overwrite if exists
+  })
+```
+
+## File Validation
+
+Always validate files before uploading:
+
+```javascript
+function validateFile(file) {
+  // Check file size (5MB max)
+  const maxSize = 5 * 1024 * 1024
+  if (file.size > maxSize) {
+    throw new Error('File too large. Max size is 5MB')
+  }
+
+  // Check file type
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif']
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Invalid file type. Only JPEG, PNG, and GIF allowed')
+  }
+
+  // Check filename
+  const invalidChars = /[<>:"\/\\|?*]/
+  if (invalidChars.test(file.name)) {
+    throw new Error('Filename contains invalid characters')
+  }
+
+  return true
+}
+
+// Usage
+try {
+  validateFile(file)
+  await uploadFile(file)
+} catch (error) {
+  alert(error.message)
+}
+```
+
+## Error Handling
+
+Common upload errors and solutions:
+
+| Error | Description | Solution |
+|-------|-------------|----------|
+| `Bucket not found` | Bucket doesn't exist | Create the bucket first |
+| `new row violates row-level security policy` | RLS blocking upload | Check RLS policies |
+| `Payload too large` | File exceeds size limit | Use resumable upload |
+| `The object name is invalid` | Invalid filename | Sanitize filename |
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Generate Unique Names" icon="fingerprint">
+    Use timestamps or UUIDs to prevent filename collisions
+  </Card>
+  
+  <Card title="Validate Client-Side" icon="check">
+    Check file size and type before uploading
+  </Card>
+  
+  <Card title="Use Resumable Uploads" icon="arrows-rotate">
+    For files over 6MB, use TUS protocol
+  </Card>
+  
+  <Card title="Set Proper MIME Types" icon="file-code">
+    Always specify the correct contentType
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Download Files" icon="download" href="/storage/downloads">
+    Learn how to retrieve uploaded files
+  </Card>
+  
+  <Card title="Image Transformations" icon="wand-magic-sparkles" href="/storage/image-transformations">
+    Resize and optimize images on-the-fly
+  </Card>
+</CardGroup>

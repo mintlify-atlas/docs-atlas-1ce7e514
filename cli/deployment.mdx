@@ -1,0 +1,474 @@
+---
+title: 'Deploying to Production'
+description: 'Deploy your local Supabase project to the Supabase Platform'
+---
+
+Once you've developed and tested your project locally, you're ready to deploy to production on the Supabase Platform. This guide walks through the deployment process and best practices.
+
+## Prerequisites
+
+Before deploying, ensure you have:
+
+- A Supabase account ([sign up here](https://supabase.com/dashboard))
+- [Supabase CLI installed](/platform/cli/installation)
+- Your project initialized locally with migrations
+- Tested your migrations with `supabase db reset`
+
+## Deployment Workflow
+
+### Step 1: Create a Project
+
+Create a new project on the [Supabase Dashboard](https://supabase.com/dashboard):
+
+1. Click **New Project**
+2. Choose your organization
+3. Enter project details:
+   - **Name**: Your project name
+   - **Database Password**: Strong password (save this securely)
+   - **Region**: Choose closest to your users
+   - **Plan**: Select appropriate tier
+
+<Note>
+Your project will take 2-3 minutes to provision.
+</Note>
+
+### Step 2: Authenticate with Supabase
+
+Login to the Supabase CLI:
+
+```bash
+supabase login
+```
+
+This opens your browser to generate a Personal Access Token. The token is stored securely in your system keychain.
+
+### Step 3: Link Your Project
+
+Link your local project to the remote project:
+
+```bash
+supabase link
+```
+
+Select your project from the interactive list. Alternatively, specify the project directly:
+
+```bash
+supabase link --project-ref <project-ref>
+```
+
+<Tip>
+Find your project ref in the Supabase Dashboard under **Project Settings** → **General**.
+</Tip>
+
+### Step 4: Deploy Migrations
+
+Push your local migrations to production:
+
+```bash
+supabase db push
+```
+
+This applies all migration files in `supabase/migrations/` to your remote database.
+
+<Warning>
+Migrations are applied in chronological order and cannot be rolled back automatically. Always test migrations locally first.
+</Warning>
+
+### Step 5: Verify Deployment
+
+Check your deployed schema in the Dashboard:
+
+1. Open your project in the [Supabase Dashboard](https://supabase.com/dashboard)
+2. Navigate to **Table Editor**
+3. Verify all tables and columns are present
+4. Check **SQL Editor** for any errors
+
+## Environment Configuration
+
+### Get Production Credentials
+
+Retrieve your production API credentials from the Dashboard:
+
+1. Go to **Project Settings** → **API**
+2. Copy the following:
+   - **Project URL**
+   - **anon public** key
+   - **service_role** key (keep secret!)
+
+### Configure Your Application
+
+Update your application to use production credentials:
+
+<Tabs>
+  <Tab title="Next.js">
+    ```bash .env.production
+    NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+    ```
+  </Tab>
+  
+  <Tab title="React/Vite">
+    ```bash .env.production
+    VITE_SUPABASE_URL=https://your-project.supabase.co
+    VITE_SUPABASE_ANON_KEY=your-anon-key
+    ```
+  </Tab>
+  
+  <Tab title="SvelteKit">
+    ```bash .env.production
+    PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+    PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Never commit production credentials to version control. Use environment variables and `.env.local` for local development.
+</Warning>
+
+## Seeding Production Data (Optional)
+
+For staging environments, you may want to include seed data:
+
+```bash
+supabase db push --include-seed
+```
+
+<Danger>
+**Never use seed data in production!** Seed files are designed for development and may:
+- Overwrite existing data
+- Create test accounts
+- Insert fake data
+</Danger>
+
+## Managing Multiple Environments
+
+### Strategy 1: Multiple Projects
+
+Create separate Supabase projects for each environment:
+
+```bash
+# Development
+supabase link --project-ref dev-project-ref
+supabase db push
+
+# Staging
+supabase link --project-ref staging-project-ref
+supabase db push
+
+# Production
+supabase link --project-ref prod-project-ref
+supabase db push
+```
+
+### Strategy 2: Branching (Team/Enterprise)
+
+Use [Supabase Branching](/platform/branching) to create preview environments:
+
+```bash
+# Create a preview branch
+supabase branches create feature-branch
+
+# Link to branch
+supabase link --project-ref <branch-ref>
+
+# Deploy to branch
+supabase db push
+```
+
+<Note>
+Branching is available on Team and Enterprise plans.
+</Note>
+
+## Continuous Deployment
+
+### GitHub Actions
+
+Automate deployments with GitHub Actions:
+
+```yaml .github/workflows/deploy.yml
+name: Deploy to Supabase
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      
+      - name: Deploy migrations
+        run: supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+```
+
+### Required Secrets
+
+Add these secrets to your GitHub repository:
+
+1. **SUPABASE_ACCESS_TOKEN**: Personal access token from [Account Settings](https://supabase.com/dashboard/account/tokens)
+2. **SUPABASE_DB_PASSWORD**: Your database password
+3. **SUPABASE_PROJECT_ID**: Your project reference ID
+
+<Card title="GitHub Actions Setup" icon="github" href="https://github.com/supabase/setup-cli">
+  Learn more about the official Supabase GitHub Action
+</Card>
+
+## Post-Deployment Checklist
+
+After deploying to production, verify the following:
+
+<Steps>
+  <Step title="Enable Row Level Security">
+    Ensure all tables have RLS enabled:
+    
+    ```sql
+    SELECT tablename FROM pg_tables 
+    WHERE schemaname = 'public' 
+    AND tablename NOT IN (
+      SELECT tablename FROM pg_tables t
+      JOIN pg_class c ON c.relname = t.tablename
+      WHERE c.relrowsecurity = true
+    );
+    ```
+    
+    Enable RLS on any missing tables:
+    
+    ```sql
+    ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+    ```
+  </Step>
+  
+  <Step title="Configure Auth Settings">
+    - Enable email confirmations
+    - Set up custom SMTP for emails
+    - Configure redirect URLs
+    - Set appropriate session timeouts
+    
+    Configure in **Authentication** → **Providers**
+  </Step>
+  
+  <Step title="Set Up Network Security">
+    - Enable SSL enforcement
+    - Configure network restrictions
+    - Review API settings
+    
+    Configure in **Database** → **Settings**
+  </Step>
+  
+  <Step title="Enable Backups">
+    - Daily backups (included in Pro plan)
+    - Consider Point-in-Time Recovery (PITR) for databases > 4GB
+    
+    Configure in **Database** → **Backups**
+  </Step>
+  
+  <Step title="Test Your Application">
+    - Verify all CRUD operations
+    - Test authentication flows
+    - Check real-time subscriptions
+    - Validate file uploads
+  </Step>
+</Steps>
+
+<Card title="Production Checklist" icon="clipboard-check" href="/platform/production-checklist">
+  View the complete production readiness checklist
+</Card>
+
+## Schema Changes After Deployment
+
+### Making Changes
+
+1. **Develop locally**:
+   ```bash
+   supabase migration new add_new_feature
+   # Edit the migration file
+   supabase db reset  # Test locally
+   ```
+
+2. **Test thoroughly**:
+   - Run database tests
+   - Test with seed data
+   - Verify RLS policies
+
+3. **Deploy to production**:
+   ```bash
+   supabase db push
+   ```
+
+### Rolling Back Changes
+
+If a migration causes issues:
+
+1. **Create a rollback migration**:
+   ```bash
+   supabase migration new rollback_feature
+   ```
+
+2. **Add reversal SQL**:
+   ```sql
+   -- Reverse your changes
+   DROP TABLE IF EXISTS new_table;
+   ALTER TABLE users DROP COLUMN IF EXISTS new_column;
+   ```
+
+3. **Deploy rollback**:
+   ```bash
+   supabase db push
+   ```
+
+<Warning>
+Supabase doesn't automatically generate rollback migrations. You must create them manually.
+</Warning>
+
+## Monitoring Deployments
+
+### Database Logs
+
+View deployment logs in the Dashboard:
+
+1. Go to **Logs** → **Database Logs**
+2. Filter by time range
+3. Look for migration-related entries
+
+### API Logs
+
+Monitor API usage:
+
+1. Go to **Logs** → **API Logs**
+2. Check for errors after deployment
+3. Verify endpoint response times
+
+### Database Performance
+
+Check database performance:
+
+1. Go to **Database** → **Performance**
+2. Review slow queries
+3. Check index usage
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Migration fails on remote">
+    **Error**: `migration failed to apply`
+    
+    **Solution**:
+    - Check remote database logs in Dashboard
+    - Verify migration works locally: `supabase db reset`
+    - Ensure no conflicting schema changes were made in Dashboard
+    - Check for permission issues
+  </Accordion>
+  
+  <Accordion title="Link command fails">
+    **Error**: `Failed to link project`
+    
+    **Solution**:
+    - Verify you're logged in: `supabase login`
+    - Check project ref is correct
+    - Ensure you have project access
+    - Try relinking: `supabase link --project-ref <ref>`
+  </Accordion>
+  
+  <Accordion title="Push command hangs">
+    **Error**: Command appears stuck
+    
+    **Solution**:
+    - Check network connection
+    - Verify database is running (not paused)
+    - Try with verbose logging: `supabase db push --debug`
+    - Check for large migrations (may take time)
+  </Accordion>
+  
+  <Accordion title="Credentials not working">
+    **Error**: `Invalid API key`
+    
+    **Solution**:
+    - Regenerate keys in Dashboard: **Settings** → **API**
+    - Check for extra whitespace in environment variables
+    - Verify you're using anon key (not service_role) for client
+    - Ensure keys match your project
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+### 1. Always Test Locally First
+
+```bash
+# Complete local testing workflow
+supabase migration new feature_name
+# Edit migration
+supabase db reset
+supabase test db
+# Only then deploy
+supabase db push
+```
+
+### 2. Use Staging Environment
+
+Test in staging before production:
+
+```bash
+# Deploy to staging first
+supabase link --project-ref staging-ref
+supabase db push
+
+# Test in staging, then deploy to prod
+supabase link --project-ref prod-ref
+supabase db push
+```
+
+### 3. Document Breaking Changes
+
+Comment migrations that require application updates:
+
+```sql
+-- BREAKING CHANGE: Renamed column user_name to username
+-- Update application code before deploying
+ALTER TABLE users RENAME COLUMN user_name TO username;
+```
+
+### 4. Deploy During Low-Traffic
+
+Schedule deployments during off-peak hours to minimize impact.
+
+### 5. Monitor After Deployment
+
+Watch for issues in the first hour after deployment:
+- Check error logs
+- Monitor API response times  
+- Verify key user flows
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Production Checklist" icon="clipboard-check" href="/platform/production-checklist">
+    Complete pre-launch checklist
+  </Card>
+  
+  <Card title="Security Best Practices" icon="shield" href="/platform/security/overview">
+    Secure your production environment
+  </Card>
+  
+  <Card title="Monitoring & Logs" icon="chart-line" href="/platform/monitoring">
+    Set up production monitoring
+  </Card>
+  
+  <Card title="Branching" icon="code-branch" href="/platform/branching">
+    Use preview environments for testing
+  </Card>
+</CardGroup>

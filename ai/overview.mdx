@@ -1,0 +1,174 @@
+---
+title: 'AI & Vectors Overview'
+description: 'Build AI-powered applications with Supabase using vector embeddings, similarity search, and pgvector'
+---
+
+Supabase provides powerful AI capabilities through pgvector, vector storage, and integration with AI frameworks. Build semantic search, recommendation systems, and RAG applications at scale.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Vector Embeddings" icon="brain">
+    Store and query high-dimensional vectors for semantic search
+  </Card>
+  <Card title="Similarity Search" icon="magnifying-glass">
+    Find similar items using cosine, L2, or inner product distance
+  </Card>
+  <Card title="pgvector Extension" icon="database">
+    Native PostgreSQL extension with full SQL support
+  </Card>
+  <Card title="AI Integrations" icon="robot">
+    Works with OpenAI, Anthropic, Hugging Face, and more
+  </Card>
+</CardGroup>
+
+## What are Vector Embeddings?
+
+Vector embeddings are numerical representations of data that capture semantic meaning. Similar items have similar vectors.
+
+```typescript
+// Text embeddings from OpenAI
+const embedding = [0.123, -0.456, 0.789, ...] // 1536 dimensions
+
+// Similar texts have similar vectors
+const query = "cat chases mouse"
+const similar = "kitten hunts rodent" // High similarity
+const different = "weather forecast" // Low similarity
+```
+
+## Use Cases
+
+<Accordion title="Semantic Search">
+  Search by meaning, not just keywords. Find documents that match the intent of a query even if they use different words.
+  
+  ```typescript
+  const { data } = await supabase
+    .rpc('match_documents', {
+      query_embedding: embedding,
+      match_threshold: 0.8,
+      match_count: 10
+    })
+  ```
+</Accordion>
+
+<Accordion title="Recommendation Systems">
+  Recommend products, content, or users based on similarity to past interactions or preferences.
+</Accordion>
+
+<Accordion title="RAG (Retrieval Augmented Generation)">
+  Build chatbots that answer questions using your own data by retrieving relevant context before generating responses.
+</Accordion>
+
+<Accordion title="Content Moderation">
+  Detect similar or duplicate content, classify images, or identify inappropriate material.
+</Accordion>
+
+## Architecture Options
+
+Supabase offers three ways to work with vectors:
+
+<Tabs>
+  <Tab title="pgvector Extension">
+    Store vectors directly in PostgreSQL tables with full SQL support.
+    
+    ```sql
+    create extension vector;
+    
+    create table documents (
+      id bigint primary key,
+      content text,
+      embedding vector(1536)
+    );
+    ```
+    
+    Best for: Transactional workloads, complex queries with SQL
+  </Tab>
+  
+  <Tab title="Vector Buckets">
+    Specialized storage buckets optimized for high-throughput vector operations.
+    
+    Best for: Large-scale vector storage, high-performance similarity search
+  </Tab>
+  
+  <Tab title="Analytics Buckets">
+    Store vectors with analytical queries using SQL through DuckDB.
+    
+    Best for: Large datasets, analytical workloads
+  </Tab>
+</Tabs>
+
+## Getting Started
+
+<Steps>
+  <Step title="Enable pgvector">
+    Enable the vector extension in your database:
+    
+    ```sql
+    create extension vector;
+    ```
+  </Step>
+  
+  <Step title="Create a table">
+    Create a table to store vectors:
+    
+    ```sql
+    create table documents (
+      id bigserial primary key,
+      content text,
+      embedding vector(1536)
+    );
+    ```
+  </Step>
+  
+  <Step title="Generate embeddings">
+    Use OpenAI or another provider to generate embeddings:
+    
+    ```typescript
+    import OpenAI from 'openai'
+    
+    const openai = new OpenAI()
+    
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: 'Your text here'
+    })
+    
+    const embedding = response.data[0].embedding
+    ```
+  </Step>
+  
+  <Step title="Store and search">
+    Store embeddings and perform similarity search:
+    
+    ```typescript
+    // Insert
+    await supabase
+      .from('documents')
+      .insert({ content: 'Your text', embedding })
+    
+    // Search
+    const { data } = await supabase
+      .rpc('match_documents', {
+        query_embedding: embedding,
+        match_count: 5
+      })
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Vector Embeddings" href="/ai/vector-embeddings">
+    Learn how to generate and store embeddings
+  </Card>
+  <Card title="Similarity Search" href="/ai/similarity-search">
+    Build semantic search functionality
+  </Card>
+  <Card title="pgvector Guide" href="/ai/pgvector">
+    Deep dive into the pgvector extension
+  </Card>
+  <Card title="AI Examples" href="/examples/ai">
+    Explore complete AI application examples
+  </Card>
+</CardGroup>

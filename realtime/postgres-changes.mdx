@@ -1,0 +1,408 @@
+---
+title: 'Postgres Changes'
+description: 'Listen to database changes in real-time with Supabase Realtime'
+---
+
+## Overview
+
+Postgres Changes allows you to subscribe to real-time changes in your PostgreSQL database. When a row is inserted, updated, or deleted, Realtime broadcasts the change to all subscribed clients.
+
+<Note>
+Postgres Changes uses PostgreSQL's replication functionality. Changes are captured from the Write-Ahead Log (WAL) and broadcast to connected clients.
+</Note>
+
+## Enable Realtime
+
+Before subscribing to changes, you need to enable Realtime for your tables:
+
+### Via Dashboard
+
+1. Go to the Database page in your Supabase Dashboard
+2. Click on "Replication" in the sidebar
+3. Toggle Realtime for the tables you want to watch
+
+### Via SQL
+
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+```
+
+## Basic Usage
+
+### Listen to All Changes
+
+Subscribe to all events (INSERT, UPDATE, DELETE) on a table:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://your-project.supabase.co',
+  'your-anon-key'
+)
+
+supabase
+  .channel('schema-db-changes')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'messages'
+    },
+    (payload) => {
+      console.log('Change received!', payload)
+    }
+  )
+  .subscribe()
+```
+
+### Listen to Specific Events
+
+Subscribe only to INSERT events:
+
+```typescript
+supabase
+  .channel('public:messages:insert')
+  .on(
+    'postgres_changes',
+    {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'messages'
+    },
+    (payload) => {
+      console.log('New message:', payload.new)
+    }
+  )
+  .subscribe()
+```
+
+Available events:
+- `INSERT` - New rows inserted
+- `UPDATE` - Existing rows updated
+- `DELETE` - Rows deleted
+- `*` - All events
+
+### Filter by Column Values
+
+Listen to changes only when specific column values match:
+
+```typescript
+supabase
+  .channel('room-messages')
+  .on(
+    'postgres_changes',
+    {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'messages',
+      filter: 'room_id=eq.123'
+    },
+    (payload) => {
+      console.log('New message in room 123:', payload.new)
+    }
+  )
+  .subscribe()
+```
+
+Supported filter operators:
+- `eq` - Equals
+- `neq` - Not equals
+- `lt` - Less than
+- `lte` - Less than or equal
+- `gt` - Greater than
+- `gte` - Greater than or equal
+
+## Payload Structure
+
+The payload object contains information about the change:
+
+```typescript
+{
+  commit_timestamp: '2024-03-04T10:30:00Z',
+  errors: null,
+  eventType: 'INSERT',
+  new: {
+    id: 1,
+    text: 'Hello world',
+    user_id: 'abc-123',
+    created_at: '2024-03-04T10:30:00Z'
+  },
+  old: {}, // Empty for INSERT
+  schema: 'public',
+  table: 'messages'
+}
+```
+
+### Event Type Differences
+
+**INSERT**: `new` contains the inserted row, `old` is empty
+
+```typescript
+{
+  eventType: 'INSERT',
+  new: { id: 1, text: 'New message' },
+  old: {}
+}
+```
+
+**UPDATE**: Both `new` and `old` contain data
+
+```typescript
+{
+  eventType: 'UPDATE',
+  new: { id: 1, text: 'Updated message' },
+  old: { id: 1, text: 'Original message' }
+}
+```
+
+**DELETE**: `old` contains the deleted row, `new` is empty
+
+```typescript
+{
+  eventType: 'DELETE',
+  new: {},
+  old: { id: 1, text: 'Deleted message' }
+}
+```
+
+## Advanced Patterns
+
+### Multiple Table Subscriptions
+
+Listen to changes across multiple tables using one channel:
+
+```typescript
+const channel = supabase.channel('database-changes')
+
+channel
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'messages' },
+    handleMessageChange
+  )
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'users' },
+    handleUserChange
+  )
+  .subscribe()
+```
+
+### Real-time Dashboard Example
+
+Automatically update a dashboard when metrics change:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+import { useState, useEffect } from 'react'
+
+function MetricsDashboard() {
+  const [metrics, setMetrics] = useState([])
+  const supabase = createClient(URL, KEY)
+
+  useEffect(() => {
+    // Fetch initial data
+    supabase
+      .from('metrics')
+      .select('*')
+      .then(({ data }) => setMetrics(data))
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('metrics-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'metrics' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setMetrics((prev) => [...prev, payload.new])
+          } else if (payload.eventType === 'UPDATE') {
+            setMetrics((prev) =>
+              prev.map((m) => (m.id === payload.new.id ? payload.new : m))
+            )
+          } else if (payload.eventType === 'DELETE') {
+            setMetrics((prev) => prev.filter((m) => m.id !== payload.old.id))
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [])
+
+  return <div>{/* Render metrics */}</div>
+}
+```
+
+### Live Query Pattern
+
+Combine initial fetch with real-time updates:
+
+```typescript
+async function setupLiveQuery() {
+  // 1. Fetch initial data
+  const { data: initialData } = await supabase
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(50)
+
+  displayMessages(initialData)
+
+  // 2. Subscribe to new changes
+  supabase
+    .channel('new-messages')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages' },
+      (payload) => {
+        addMessage(payload.new)
+      }
+    )
+    .subscribe()
+}
+```
+
+## Authorization with RLS
+
+Postgres Changes respects Row Level Security policies. Clients only receive changes for rows they have permission to see.
+
+### Enable RLS
+
+```sql
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can only see their own messages"
+  ON messages
+  FOR SELECT
+  USING (auth.uid() = user_id);
+```
+
+Now authenticated users only receive real-time updates for their own messages:
+
+```typescript
+// User only receives changes for their messages
+const supabase = createClient(URL, KEY, {
+  global: {
+    headers: { Authorization: `Bearer ${userToken}` }
+  }
+})
+
+supabase
+  .channel('my-messages')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'messages' },
+    (payload) => {
+      console.log('My message changed:', payload)
+    }
+  )
+  .subscribe()
+```
+
+<Warning>
+Without RLS policies, all users can see all database changes. Always enable RLS for production applications.
+</Warning>
+
+## Performance Tips
+
+### Limit the Number of Subscriptions
+
+Each subscription creates overhead. Combine related subscriptions when possible:
+
+```typescript
+// Better: One channel with filters
+const channel = supabase.channel('all-events')
+channel
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, handler)
+  .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, handler)
+  .subscribe()
+
+// Avoid: Multiple channels for same table
+// supabase.channel('inserts').on(...)
+// supabase.channel('updates').on(...)
+```
+
+### Use Column Filters
+
+Filter at the database level rather than in your application:
+
+```typescript
+// Good: Filter server-side
+supabase
+  .channel('active-users')
+  .on(
+    'postgres_changes',
+    {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'users',
+      filter: 'status=eq.active'
+    },
+    handler
+  )
+  .subscribe()
+
+// Avoid: Filter client-side
+supabase
+  .channel('all-users')
+  .on(
+    'postgres_changes',
+    { event: 'UPDATE', schema: 'public', table: 'users' },
+    (payload) => {
+      if (payload.new.status === 'active') {
+        handler(payload)
+      }
+    }
+  )
+```
+
+### Clean Up Subscriptions
+
+Always unsubscribe when done:
+
+```typescript
+const channel = supabase.channel('temp')
+// ... use channel
+
+// Clean up
+await channel.unsubscribe()
+```
+
+## Troubleshooting
+
+### No Changes Received
+
+1. **Check if Realtime is enabled** for the table in the Dashboard
+2. **Verify RLS policies** aren't blocking changes
+3. **Confirm subscription status**:
+
+```typescript
+channel.subscribe((status) => {
+  console.log('Status:', status)
+  if (status === 'SUBSCRIBED') {
+    console.log('Successfully subscribed')
+  }
+})
+```
+
+### Changes Delayed
+
+- Realtime uses PostgreSQL's logical replication, which has minimal latency (typically < 100ms)
+- Network conditions affect delivery time
+- Check your project's health in the Dashboard
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Broadcast" icon="broadcast-tower" href="/realtime/broadcast">
+    Send ephemeral messages between clients
+  </Card>
+  <Card title="Presence" icon="users" href="/realtime/presence">
+    Track online users in real-time
+  </Card>
+</CardGroup>

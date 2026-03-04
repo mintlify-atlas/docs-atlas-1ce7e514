@@ -1,0 +1,206 @@
+---
+title: 'Authentication Overview'
+description: 'Learn how Supabase Authentication works and secure your application'
+---
+
+Supabase Authentication provides a complete user management system that handles authentication, authorization, and user data. Built on top of PostgreSQL Row Level Security (RLS), it gives you fine-grained control over data access.
+
+## Features
+
+Supabase Auth offers multiple authentication methods:
+
+- **Email & Password**: Traditional authentication with optional email confirmation
+- **Magic Links**: Passwordless authentication via email
+- **OAuth Providers**: Social login with Google, GitHub, Apple, and more
+- **Phone Authentication**: SMS-based login
+- **Multi-Factor Authentication (MFA)**: Add an extra layer of security with TOTP
+- **Anonymous Sign-ins**: Allow users to explore your app before registering
+
+## How It Works
+
+Authentication in Supabase follows these core principles:
+
+1. **User Identity**: Users are stored in the `auth.users` table
+2. **Sessions**: JWT tokens are issued and automatically refreshed
+3. **Row Level Security**: Database policies control data access based on user identity
+4. **Secure by Default**: All auth endpoints use secure cookies and HTTPS
+
+<CodeGroup>
+
+```javascript JavaScript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+)
+
+// Check current session
+const { data: { session } } = await supabase.auth.getSession()
+
+// Listen for auth changes
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log(event, session)
+})
+```
+
+```dart Flutter
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+// Initialize Supabase
+await Supabase.initialize(
+  url: 'YOUR_SUPABASE_URL',
+  anonKey: 'YOUR_ANON_KEY',
+);
+
+final supabase = Supabase.instance.client;
+
+// Get current session
+final session = supabase.auth.currentSession;
+```
+
+```python Python
+from supabase import create_client, Client
+
+supabase: Client = create_client(
+  supabase_url,
+  supabase_key
+)
+
+# Get current user
+user = supabase.auth.get_user()
+```
+
+</CodeGroup>
+
+## Authentication Flow
+
+<Steps>
+  <Step title="Initialize Client">
+    Create a Supabase client with your project URL and anon key
+  </Step>
+  
+  <Step title="Sign Up/Sign In">
+    Users authenticate using their preferred method (email, OAuth, etc.)
+  </Step>
+  
+  <Step title="Session Management">
+    Supabase automatically manages JWT tokens and refreshes them
+  </Step>
+  
+  <Step title="Access Control">
+    Use Row Level Security policies to control data access
+  </Step>
+</Steps>
+
+## Client Setup
+
+### Server-Side (Next.js)
+
+```typescript app/lib/supabase/server.ts
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+export async function createClient() {
+  const cookieStore = await cookies()
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => 
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // The `setAll` method was called from a Server Component.
+            // This can be ignored if you have proxy refreshing user sessions.
+          }
+        },
+      },
+    }
+  )
+}
+```
+
+### Client-Side (Browser)
+
+```typescript app/lib/supabase/client.ts
+import { createBrowserClient } from '@supabase/ssr'
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+  )
+}
+```
+
+## User Metadata
+
+Store additional user information in two places:
+
+- **User Metadata**: Public data accessible in JWT tokens
+- **App Metadata**: Private data only accessible server-side
+
+```javascript
+const { data, error } = await supabase.auth.signUp({
+  email: 'user@example.com',
+  password: 'secure-password',
+  options: {
+    data: {
+      first_name: 'John',
+      age: 27,
+    }
+  }
+})
+```
+
+## Security Best Practices
+
+<Warning>
+  Never expose your `service_role` key in client-side code. Use the `anon` key for client applications.
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Enable Email Confirmation" icon="envelope">
+    Verify user email addresses before granting access to sensitive features
+  </Card>
+  
+  <Card title="Implement RLS Policies" icon="shield">
+    Always enable Row Level Security on tables containing user data
+  </Card>
+  
+  <Card title="Use Secure Passwords" icon="lock">
+    Enforce strong password requirements in your application
+  </Card>
+  
+  <Card title="Enable MFA" icon="mobile">
+    Offer multi-factor authentication for enhanced security
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Sign Up Users" icon="user-plus" href="/auth/sign-up">
+    Learn how to register new users
+  </Card>
+  
+  <Card title="Sign In Methods" icon="right-to-bracket" href="/auth/sign-in">
+    Implement various sign-in methods
+  </Card>
+  
+  <Card title="OAuth Integration" icon="share-nodes" href="/auth/oauth">
+    Add social login providers
+  </Card>
+  
+  <Card title="Multi-Factor Auth" icon="shield-halved" href="/auth/mfa">
+    Secure accounts with MFA
+  </Card>
+</CardGroup>

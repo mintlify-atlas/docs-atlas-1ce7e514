@@ -1,0 +1,539 @@
+---
+title: 'Deploy Edge Functions'
+description: 'Deploy Edge Functions to production with CLI, GitHub Actions, and advanced strategies'
+---
+
+## Deployment Methods
+
+Supabase Edge Functions can be deployed using:
+
+- **Supabase CLI**: Manual deployments from your local machine
+- **GitHub Actions**: Automated CI/CD deployments
+- **Other CI/CD**: GitLab CI, CircleCI, Bitbucket Pipelines, etc.
+
+## CLI Deployment
+
+### Deploy a Single Function
+
+Deploy one function:
+
+```bash
+supabase functions deploy hello-world
+```
+
+Output:
+
+```
+Deployed function hello-world in 2.3s
+  https://your-project.supabase.co/functions/v1/hello-world
+```
+
+### Deploy All Functions
+
+Deploy all functions in your project:
+
+```bash
+supabase functions deploy
+```
+
+<Tip>
+Since Supabase CLI v1.62.0, you can deploy all functions with a single command.
+</Tip>
+
+### Deploy to a Specific Project
+
+Deploy to a specific project using the project reference:
+
+```bash
+supabase functions deploy hello-world --project-ref your-project-ref
+```
+
+Or link your project first:
+
+```bash
+supabase link --project-ref your-project-ref
+supabase functions deploy
+```
+
+### Verify Deployment
+
+List all deployed functions:
+
+```bash
+supabase functions list
+```
+
+Output:
+
+```
+Function Name    Version  Status   Created At
+hello-world      v2       ACTIVE   2024-03-04 10:30:00
+send-email       v1       ACTIVE   2024-03-03 15:20:00
+stripe-webhook   v3       ACTIVE   2024-03-02 09:15:00
+```
+
+## GitHub Actions Deployment
+
+Automate deployments when you push code to GitHub.
+
+### Setup
+
+#### 1. Generate Access Token
+
+1. Go to https://supabase.com/dashboard/account/tokens
+2. Click "Generate New Token"
+3. Give it a name like "GitHub Actions"
+4. Copy the token
+
+#### 2. Add Token to GitHub Secrets
+
+1. Go to your GitHub repository
+2. Navigate to Settings > Secrets and variables > Actions
+3. Click "New repository secret"
+4. Name: `SUPABASE_ACCESS_TOKEN`
+5. Value: Paste your token
+6. Click "Add secret"
+
+#### 3. Create Workflow File
+
+Create `.github/workflows/deploy.yml`:
+
+```yaml
+name: Deploy Functions
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_ID: your-project-ref
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - run: supabase functions deploy --project-ref $PROJECT_ID
+```
+
+### Deploy Specific Functions
+
+Deploy only specific functions:
+
+```yaml
+- run: supabase functions deploy hello-world --project-ref $PROJECT_ID
+- run: supabase functions deploy send-email --project-ref $PROJECT_ID
+```
+
+### Deploy on Path Changes
+
+Only deploy when function code changes:
+
+```yaml
+name: Deploy Functions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/functions/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy changed functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy --project-ref ${{ secrets.PROJECT_ID }}
+```
+
+### Deploy with Secrets
+
+Set secrets during deployment:
+
+```yaml
+- name: Deploy and set secrets
+  env:
+    SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    STRIPE_SECRET: ${{ secrets.STRIPE_SECRET }}
+  run: |
+    supabase secrets set OPENAI_API_KEY="$OPENAI_API_KEY" --project-ref ${{ secrets.PROJECT_ID }}
+    supabase secrets set STRIPE_SECRET="$STRIPE_SECRET" --project-ref ${{ secrets.PROJECT_ID }}
+    supabase functions deploy --project-ref ${{ secrets.PROJECT_ID }}
+```
+
+### Multi-Environment Deployment
+
+Deploy to staging and production:
+
+```yaml
+name: Deploy Functions
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy to staging
+        if: github.ref == 'refs/heads/staging'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy --project-ref ${{ secrets.STAGING_PROJECT_ID }}
+
+      - name: Deploy to production
+        if: github.ref == 'refs/heads/main'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy --project-ref ${{ secrets.PRODUCTION_PROJECT_ID }}
+```
+
+## Configuration
+
+### Function Configuration
+
+Configure individual functions in `config.toml`:
+
+```toml
+[functions.hello-world]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = true
+import_map = "./import_map.json"
+```
+
+### Configuration Options
+
+#### verify_jwt
+
+Control JWT verification:
+
+```toml
+[functions.public-function]
+verify_jwt = false  # No authentication required
+
+[functions.private-function]
+verify_jwt = true   # Requires valid JWT (default)
+```
+
+<Warning>
+Only disable JWT verification for public webhooks or functions that implement their own authentication.
+</Warning>
+
+#### import_map
+
+Specify custom import map location:
+
+```toml
+[functions.my-function]
+import_map = "./functions/my-function/import_map.json"
+```
+
+## Import Maps
+
+Import maps let you alias module URLs for easier imports.
+
+### Create Import Map
+
+Create `supabase/functions/import_map.json`:
+
+```json
+{
+  "imports": {
+    "supabase": "npm:supabase-js@2",
+    "stripe": "https://esm.sh/stripe@14?target=denonext",
+    "openai": "https://esm.sh/openai@4"
+  }
+}
+```
+
+### Use Aliases
+
+Now use short aliases in your functions:
+
+```typescript
+// Instead of:
+import { createClient } from 'npm:supabase-js@2'
+
+// Use:
+import { createClient } from 'supabase'
+```
+
+### Function-Specific Import Maps
+
+Create per-function import maps:
+
+```
+supabase/functions/
+├── hello-world/
+│   ├── index.ts
+│   └── import_map.json
+└── send-email/
+    ├── index.ts
+    └── import_map.json
+```
+
+## Advanced Deployment Strategies
+
+### Blue-Green Deployment
+
+Deploy new version alongside old version:
+
+```bash
+# Deploy new version with different name
+supabase functions deploy hello-world-v2
+
+# Test new version
+curl https://your-project.supabase.co/functions/v1/hello-world-v2
+
+# Switch traffic (update client code)
+# Delete old version when ready
+supabase functions delete hello-world-v1
+```
+
+### Canary Deployment
+
+Gradually roll out new version:
+
+1. Deploy new version
+2. Route small percentage of traffic to new version
+3. Monitor metrics and errors
+4. Gradually increase traffic
+5. Complete rollout or rollback if issues found
+
+<Note>
+Canary deployments require a load balancer or custom routing logic in your application.
+</Note>
+
+### Rolling Back
+
+Quickly revert to previous version:
+
+```bash
+# Deploy previous version
+git checkout previous-commit
+supabase functions deploy hello-world
+
+# Or restore from backup
+supabase functions deploy hello-world --restore-from-backup
+```
+
+## Deployment Best Practices
+
+### Version Control
+
+Always commit function code to git:
+
+```bash
+git add supabase/functions/
+git commit -m "Add email sending function"
+git push origin main
+```
+
+### Test Before Deploy
+
+Run tests locally before deploying:
+
+```bash
+# Start local services
+supabase start
+
+# Serve function locally
+supabase functions serve hello-world
+
+# Run tests
+npm test
+
+# Deploy if tests pass
+supabase functions deploy hello-world
+```
+
+### Deployment Checklist
+
+Before deploying:
+
+- [ ] Test function locally
+- [ ] Set required environment variables
+- [ ] Update function configuration in `config.toml`
+- [ ] Review code changes
+- [ ] Check for breaking changes
+- [ ] Verify JWT settings
+- [ ] Test with production-like data
+
+### Monitor Deployments
+
+Check logs after deployment:
+
+```bash
+supabase functions logs hello-world
+```
+
+Monitor for:
+- Increased error rates
+- Performance degradation
+- Unexpected behavior
+
+## CI/CD with Other Platforms
+
+### GitLab CI
+
+Create `.gitlab-ci.yml`:
+
+```yaml
+deploy:
+  image: node:18
+  stage: deploy
+  only:
+    - main
+  script:
+    - npm install -g supabase
+    - supabase functions deploy --project-ref $PROJECT_ID
+  variables:
+    SUPABASE_ACCESS_TOKEN: $SUPABASE_ACCESS_TOKEN
+```
+
+### CircleCI
+
+Create `.circleci/config.yml`:
+
+```yaml
+version: 2.1
+
+jobs:
+  deploy:
+    docker:
+      - image: cimg/node:18.0
+    steps:
+      - checkout
+      - run:
+          name: Install Supabase CLI
+          command: npm install -g supabase
+      - run:
+          name: Deploy functions
+          command: supabase functions deploy --project-ref $PROJECT_ID
+
+workflows:
+  deploy:
+    jobs:
+      - deploy:
+          filters:
+            branches:
+              only: main
+```
+
+### Bitbucket Pipelines
+
+Create `bitbucket-pipelines.yml`:
+
+```yaml
+pipelines:
+  branches:
+    main:
+      - step:
+          name: Deploy Functions
+          image: node:18
+          script:
+            - npm install -g supabase
+            - supabase functions deploy --project-ref $PROJECT_ID
+```
+
+## Troubleshooting
+
+### Deployment Fails
+
+If deployment fails:
+
+1. **Check CLI version**:
+   ```bash
+   supabase --version
+   ```
+
+2. **Verify project link**:
+   ```bash
+   supabase link --project-ref your-project-ref
+   ```
+
+3. **Check access token**:
+   ```bash
+   supabase projects list
+   ```
+
+4. **Review function code** for syntax errors
+
+### Function Not Updating
+
+If changes don't appear:
+
+1. **Verify deployment succeeded**:
+   ```bash
+   supabase functions list
+   ```
+
+2. **Check function version** increased
+
+3. **Clear browser cache** if testing in browser
+
+4. **Wait a few seconds** for propagation
+
+### Permission Errors
+
+If you get permission errors:
+
+1. **Regenerate access token** with correct permissions
+2. **Update token in secrets** for CI/CD
+3. **Verify project reference** is correct
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="key" href="/functions/environment-variables">
+    Manage secrets and configuration
+  </Card>
+  <Card title="Debugging" icon="bug" href="/functions/debugging">
+    Debug and monitor your functions
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Supabase CLI Reference](https://supabase.com/docs/reference/cli/supabase-functions-deploy)
+- [GitHub Actions Setup](https://github.com/supabase/setup-cli)
+- [Example Workflows](https://github.com/supabase/supabase/tree/master/examples/edge-functions/.github/workflows)

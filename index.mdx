@@ -1,97 +1,228 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Supabase Documentation"
+description: "The Postgres development platform - build web, mobile, and AI applications with database, auth, storage, realtime, and edge functions"
+mode: "custom"
 ---
 
-## Setting up
+<div className="relative overflow-hidden dark:bg-[#0d0d0d] bg-white py-20">
+  <div className="absolute inset-0 dark:bg-gradient-to-br dark:from-[#1b1c1c] dark:via-[#0d0d0d] dark:to-[#0d0d0d] bg-gradient-to-br from-gray-50 via-white to-gray-50" />
+  <div className="relative max-w-7xl mx-auto px-6 lg:px-8">
+    <div className="text-center">
+      <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold dark:text-white text-gray-900 mb-6">
+        Build in a weekend.
+        <br />
+        <span className="bg-gradient-to-r from-[#3ecf8e] to-[#2ea44f] bg-clip-text text-transparent">
+          Scale to millions.
+        </span>
+      </h1>
+      <p className="mt-6 text-lg sm:text-xl dark:text-gray-300 text-gray-600 max-w-3xl mx-auto leading-relaxed">
+        Supabase is the open source Postgres development platform. Start your project with a Postgres database, authentication, instant APIs, edge functions, realtime subscriptions, storage, and vector embeddings.
+      </p>
+      <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+        <a
+          href="/quickstart"
+          className="inline-flex items-center px-8 py-3.5 rounded-lg bg-[#3ecf8e] hover:bg-[#2ea44f] text-white font-semibold text-base transition-colors shadow-lg hover:shadow-xl"
+        >
+          Get Started
+          <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+        </a>
+        <a
+          href="/api/javascript"
+          className="inline-flex items-center px-8 py-3.5 rounded-lg dark:bg-white/10 bg-gray-100 dark:hover:bg-white/20 hover:bg-gray-200 dark:text-white text-gray-900 font-semibold text-base transition-colors dark:border dark:border-white/20 border border-gray-200"
+        >
+          Explore API Reference
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold dark:text-white text-gray-900 mb-3">Quick start</h2>
+    <p className="text-lg dark:text-gray-400 text-gray-600">Get up and running with Supabase in minutes</p>
+  </div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+  <Steps>
+    <Step title="Create a project">
+      Sign up for a free Supabase account and create a new project. You'll get a dedicated Postgres database with all the features you need.
 
-## Make it yours
+      ```bash
+      # Or start locally with the CLI
+      npx supabase init
+      npx supabase start
+      ```
+    </Step>
 
-Design a docs site that looks great and empowers your users.
+    <Step title="Install the client library">
+      Install the Supabase client for your favorite language or framework.
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+      <CodeGroup>
+      ```bash npm
+      npm install @supabase/supabase-js
+      ```
 
-## Create beautiful pages
+      ```bash yarn
+      yarn add @supabase/supabase-js
+      ```
 
-Everything you need to create world-class documentation.
+      ```bash pnpm
+      pnpm add @supabase/supabase-js
+      ```
+      </CodeGroup>
+    </Step>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+    <Step title="Initialize the client">
+      Connect to your Supabase project using your project URL and API key.
 
-## Need inspiration?
+      ```javascript
+      import { createClient } from '@supabase/supabase-js'
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+      const supabaseUrl = 'https://your-project.supabase.co'
+      const supabaseKey = 'your-anon-key'
+      const supabase = createClient(supabaseUrl, supabaseKey)
+      ```
+    </Step>
+
+    <Step title="Start building">
+      Use the Supabase client to interact with your database, authenticate users, store files, and more.
+
+      ```javascript
+      // Query your database
+      const { data, error } = await supabase
+        .from('todos')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      // Listen to realtime changes
+      supabase
+        .channel('todos')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, 
+          (payload) => console.log('Change received!', payload)
+        )
+        .subscribe()
+      ```
+
+      <Tip>
+        Check out the [tutorials](/guides/building-a-todo-app) for complete working examples.
+      </Tip>
+    </Step>
+  </Steps>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold dark:text-white text-gray-900 mb-3">Explore by feature</h2>
+    <p className="text-lg dark:text-gray-400 text-gray-600">Everything you need to build a complete application</p>
+  </div>
+
+  <CardGroup cols={2}>
+    <Card title="Database" icon="database" href="/database/overview">
+      PostgreSQL database with full SQL support, extensions, and migrations
+    </Card>
+    <Card title="Authentication" icon="shield-halved" href="/auth/overview">
+      User management with email, OAuth, and magic links out of the box
+    </Card>
+    <Card title="Storage" icon="folder-open" href="/storage/overview">
+      Store and serve large files with built-in image transformations
+    </Card>
+    <Card title="Realtime" icon="signal-stream" href="/realtime/overview">
+      Listen to database changes and build collaborative features
+    </Card>
+    <Card title="Edge Functions" icon="bolt" href="/functions/overview">
+      Deploy serverless TypeScript functions at the edge
+    </Card>
+    <Card title="AI & Vectors" icon="brain" href="/ai/overview">
+      Build AI-powered features with pgvector and embeddings
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold dark:text-white text-gray-900 mb-3">Client libraries</h2>
+    <p className="text-lg dark:text-gray-400 text-gray-600">Official SDKs for your favorite languages and frameworks</p>
+  </div>
+
+  <CardGroup cols={3}>
+    <Card title="JavaScript" icon="js" href="/api/javascript">
+      TypeScript client for web and Node.js
+    </Card>
+    <Card title="Python" icon="python" href="/api/python">
+      Native Python client library
+    </Card>
+    <Card title="Flutter" icon="mobile" href="/api/flutter">
+      Dart client for mobile apps
+    </Card>
+    <Card title="Swift" icon="apple" href="/api/swift">
+      Native iOS and macOS support
+    </Card>
+    <Card title="Kotlin" icon="android" href="/api/kotlin">
+      Multiplatform Kotlin client
+    </Card>
+    <Card title="REST API" icon="code" href="/api/rest/overview">
+      Direct HTTP access to all features
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold dark:text-white text-gray-900 mb-3">Learn by doing</h2>
+    <p className="text-lg dark:text-gray-400 text-gray-600">Follow step-by-step tutorials and integration guides</p>
+  </div>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <a href="/guides/building-a-todo-app" className="group block rounded-2xl dark:bg-[#121212] bg-gray-50 dark:border-[#2c2c2c] border-gray-200 border dark:hover:border-[#3ecf8e] hover:border-[#3ecf8e] overflow-hidden transition-colors no-underline">
+      <div className="h-56 dark:bg-gradient-to-br dark:from-[#1b1c1c] dark:to-[#0d0d0d] bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center overflow-hidden">
+        <div className="text-8xl">📝</div>
+      </div>
+      <div className="p-6">
+        <h3 className="text-base font-semibold dark:text-white text-gray-900 mb-2">Build a Todo App</h3>
+        <p className="text-sm dark:text-gray-400 text-gray-600 mb-3">Create a full-stack todo application with authentication and realtime updates</p>
+        <div className="flex items-center text-sm font-medium dark:text-gray-400 text-gray-600 dark:group-hover:text-[#3ecf8e] group-hover:text-[#3ecf8e] transition-colors">
+          Start tutorial
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+
+    <a href="/guides/nextjs" className="group block rounded-2xl dark:bg-[#121212] bg-gray-50 dark:border-[#2c2c2c] border-gray-200 border dark:hover:border-[#3ecf8e] hover:border-[#3ecf8e] overflow-hidden transition-colors no-underline">
+      <div className="h-56 dark:bg-gradient-to-br dark:from-[#1b1c1c] dark:to-[#0d0d0d] bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center overflow-hidden">
+        <div className="text-8xl">⚡</div>
+      </div>
+      <div className="p-6">
+        <h3 className="text-base font-semibold dark:text-white text-gray-900 mb-2">Next.js Integration</h3>
+        <p className="text-sm dark:text-gray-400 text-gray-600 mb-3">Build a Next.js app with Supabase authentication and data fetching</p>
+        <div className="flex items-center text-sm font-medium dark:text-gray-400 text-gray-600 dark:group-hover:text-[#3ecf8e] group-hover:text-[#3ecf8e] transition-colors">
+          View guide
+          <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+  <div className="rounded-2xl dark:bg-gradient-to-br dark:from-[#1b1c1c] dark:to-[#0d0d0d] bg-gradient-to-br from-gray-50 to-white dark:border dark:border-[#2c2c2c] border border-gray-200 p-12 text-center">
+    <h2 className="text-3xl font-bold dark:text-white text-gray-900 mb-4">Ready to build?</h2>
+    <p className="text-lg dark:text-gray-400 text-gray-600 max-w-2xl mx-auto mb-8">
+      Start with our quickstart guide and have your first Supabase project running in minutes
+    </p>
+    <a
+      href="/quickstart"
+      className="inline-flex items-center px-8 py-3.5 rounded-lg bg-[#3ecf8e] hover:bg-[#2ea44f] text-white font-semibold text-base transition-colors shadow-lg hover:shadow-xl"
+    >
+      Get Started Now
+      <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+      </svg>
+    </a>
+  </div>
+</div>

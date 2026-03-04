@@ -1,0 +1,546 @@
+---
+title: 'Database Operations'
+description: 'Perform CRUD operations using the REST API'
+icon: 'database'
+---
+
+## Overview
+
+The Supabase REST API provides full CRUD (Create, Read, Update, Delete) capabilities for your database tables. All endpoints are automatically generated based on your database schema.
+
+## Reading Data
+
+### Select All Rows
+
+Retrieve all rows from a table.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+<ParamField query="select" type="string" required>
+  Columns to return. Use `*` for all columns or comma-separated column names.
+</ParamField>
+
+#### Response
+
+```json
+[
+  {
+    "id": 1,
+    "name": "United States",
+    "code": "US",
+    "capital": "Washington, D.C."
+  },
+  {
+    "id": 2,
+    "name": "Canada",
+    "code": "CA",
+    "capital": "Ottawa"
+  }
+]
+```
+
+### Select Specific Columns
+
+Only retrieve the columns you need.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=name,capital' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+#### Response
+
+```json
+[
+  {"name": "United States", "capital": "Washington, D.C."},
+  {"name": "Canada", "capital": "Ottawa"}
+]
+```
+
+### Select Single Row
+
+Retrieve a single row by adding a unique filter and using the `Accept: application/vnd.pgrst.object+json` header.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?id=eq.1&select=*' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Accept: application/vnd.pgrst.object+json"
+```
+
+<ParamField header="Accept" type="string">
+  Use `application/vnd.pgrst.object+json` to return a single object instead of an array.
+</ParamField>
+
+#### Response
+
+```json
+{
+  "id": 1,
+  "name": "United States",
+  "code": "US",
+  "capital": "Washington, D.C."
+}
+```
+
+## Filtering
+
+### Equality Filters
+
+```bash
+# Equal to
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?name=eq.Albania&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# Not equal to
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?name=neq.Albania&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+### Comparison Filters
+
+```bash
+# Greater than
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?population=gt.1000000&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# Greater than or equal
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?population=gte.1000000&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# Less than
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?population=lt.1000000&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# Less than or equal
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?population=lte.1000000&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+### Pattern Matching
+
+```bash
+# LIKE (case-sensitive)
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?name=like.*United*&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# ILIKE (case-insensitive)
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?name=ilike.*united*&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+### List Filters
+
+```bash
+# IN - value is in list
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?name=in.(Albania,Algeria,Andorra)&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# NOT IN - value is not in list
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?name=not.in.(Albania,Algeria)&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+### NULL Filters
+
+```bash
+# IS NULL
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?capital=is.null&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# IS NOT NULL
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?capital=not.is.null&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+### Range Filters
+
+```bash
+# BETWEEN
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?population=gte.1000000&population=lte.10000000&select=*' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+## Ordering
+
+Sort results by one or more columns.
+
+```bash
+# Ascending order
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*&order=name.asc' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# Descending order
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*&order=population.desc' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# Multiple columns
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*&order=name.asc,population.desc' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+<ParamField query="order" type="string">
+  Column name followed by `.asc` or `.desc`. Separate multiple with commas.
+</ParamField>
+
+### NULL Ordering
+
+```bash
+# NULLs first
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*&order=capital.asc.nullsfirst' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# NULLs last
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*&order=capital.asc.nullslast' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+## Pagination
+
+### Limit and Offset
+
+```bash
+# First 10 rows
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*&limit=10' \
+  -H "apikey: YOUR_ANON_KEY"
+
+# Skip first 20, get next 10
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*&limit=10&offset=20' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+<ParamField query="limit" type="integer">
+  Maximum number of rows to return.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  Number of rows to skip.
+</ParamField>
+
+### Range Header (Preferred)
+
+Use the `Range` header for more efficient pagination.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Range: 0-9"
+```
+
+<ParamField header="Range" type="string">
+  Range of rows to return (e.g., `0-9` for first 10 rows).
+</ParamField>
+
+#### Response Headers
+
+```
+Content-Range: 0-9/100
+```
+
+The response includes a `Content-Range` header showing the range and total count.
+
+### Getting Total Count
+
+Get the total number of rows matching your query.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=*&limit=10' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Prefer: count=exact"
+```
+
+<ParamField header="Prefer" type="string">
+  Use `count=exact` to get the total count, `count=planned` for an estimate, or `count=estimated` for PostgreSQL's estimate.
+</ParamField>
+
+## Creating Data
+
+### Insert Single Row
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/rest/v1/countries' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: return=representation" \
+  -d '{
+    "name": "Denmark",
+    "code": "DK",
+    "capital": "Copenhagen"
+  }'
+```
+
+<ParamField header="Prefer" type="string">
+  Use `return=representation` to return the inserted row, or `return=minimal` for no content response.
+</ParamField>
+
+#### Response (with return=representation)
+
+```json
+[
+  {
+    "id": 3,
+    "name": "Denmark",
+    "code": "DK",
+    "capital": "Copenhagen"
+  }
+]
+```
+
+### Insert Multiple Rows
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/rest/v1/countries' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: return=representation" \
+  -d '[
+    {"name": "Denmark", "code": "DK", "capital": "Copenhagen"},
+    {"name": "Norway", "code": "NO", "capital": "Oslo"}
+  ]'
+```
+
+### Upsert (Insert or Update)
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/rest/v1/countries' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: resolution=merge-duplicates,return=representation" \
+  -d '{
+    "id": 1,
+    "name": "United States of America",
+    "code": "US"
+  }'
+```
+
+<ParamField header="Prefer" type="string">
+  Use `resolution=merge-duplicates` for upsert behavior. Specify `on_conflict` parameter for custom conflict columns.
+</ParamField>
+
+## Updating Data
+
+### Update Rows
+
+```bash
+curl -X PATCH 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?id=eq.1' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Prefer: return=representation" \
+  -d '{
+    "name": "United States of America"
+  }'
+```
+
+<Warning>
+  Always include a filter when updating to avoid updating all rows in the table.
+</Warning>
+
+#### Response
+
+```json
+[
+  {
+    "id": 1,
+    "name": "United States of America",
+    "code": "US",
+    "capital": "Washington, D.C."
+  }
+]
+```
+
+### Update Multiple Rows
+
+```bash
+curl -X PATCH 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?continent=eq.Europe' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "region": "European Union"
+  }'
+```
+
+## Deleting Data
+
+### Delete Rows
+
+```bash
+curl -X DELETE 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?id=eq.1' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+<Warning>
+  Always include a filter when deleting to avoid deleting all rows in the table.
+</Warning>
+
+### Delete Multiple Rows
+
+```bash
+curl -X DELETE 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?population=lt.1000' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Prefer: return=representation"
+```
+
+## Relationships
+
+### One-to-Many
+
+Query related data using foreign keys.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=name,cities(name,population)' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+#### Response
+
+```json
+[
+  {
+    "name": "United States",
+    "cities": [
+      {"name": "New York", "population": 8336817},
+      {"name": "Los Angeles", "population": 3979576}
+    ]
+  }
+]
+```
+
+### Many-to-One
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/cities?select=name,countries(name,code)' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+### Many-to-Many
+
+Query through junction tables.
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/students?select=name,courses(name)' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+### Filtering on Related Data
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries?select=name,cities(name)&cities.population=gt.1000000' \
+  -H "apikey: YOUR_ANON_KEY"
+```
+
+## Calling Functions
+
+Invoke PostgreSQL functions via RPC.
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/rest/v1/rpc/get_countries_by_continent' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "continent_name": "Europe"
+  }'
+```
+
+<ParamField body="function parameters" type="object">
+  Pass function parameters as a JSON object.
+</ParamField>
+
+### Function Example
+
+```sql
+CREATE OR REPLACE FUNCTION get_countries_by_continent(continent_name TEXT)
+RETURNS TABLE (id BIGINT, name TEXT, code TEXT) AS $$
+  SELECT id, name, code FROM countries WHERE continent = continent_name;
+$$ LANGUAGE sql;
+```
+
+## Transactions
+
+Perform multiple operations atomically using PostgreSQL functions.
+
+```sql
+CREATE OR REPLACE FUNCTION transfer_balance(
+  sender_id UUID,
+  receiver_id UUID,
+  amount NUMERIC
+)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE accounts SET balance = balance - amount WHERE id = sender_id;
+  UPDATE accounts SET balance = balance + amount WHERE id = receiver_id;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+Call via RPC:
+
+```bash
+curl -X POST 'https://<PROJECT_REF>.supabase.co/rest/v1/rpc/transfer_balance' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sender_id": "uuid-1",
+    "receiver_id": "uuid-2",
+    "amount": 100.00
+  }'
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use indexes for filtered columns">
+    Create indexes on columns you frequently filter by:
+    
+    ```sql
+    CREATE INDEX idx_countries_name ON countries(name);
+    CREATE INDEX idx_countries_population ON countries(population);
+    ```
+  </Accordion>
+  
+  <Accordion title="Select only needed columns">
+    Reduce payload size by selecting only the columns you need:
+    
+    ```bash
+    ?select=id,name,capital
+    ```
+  </Accordion>
+  
+  <Accordion title="Use pagination for large datasets">
+    Always paginate when dealing with large result sets:
+    
+    ```bash
+    ?limit=100&offset=0
+    ```
+  </Accordion>
+  
+  <Accordion title="Enable Row Level Security">
+    Always enable RLS on your tables and create appropriate policies:
+    
+    ```sql
+    ALTER TABLE countries ENABLE ROW LEVEL SECURITY;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Storage API" icon="folder" href="/api/rest/storage">
+    Learn about file storage operations
+  </Card>
+  
+  <Card title="Edge Functions" icon="bolt" href="/api/rest/edge-functions">
+    Call serverless functions
+  </Card>
+</CardGroup>

@@ -1,0 +1,596 @@
+---
+title: 'Database Migrations'
+description: 'Manage database schema changes with version-controlled migrations'
+---
+
+Database migrations are version-controlled SQL files that track changes to your database schema over time. They provide a systematic way to evolve your database structure while maintaining consistency across different environments.
+
+## Why Use Migrations?
+
+Migrations offer several benefits:
+
+- **Version Control**: Track all database changes in your repository
+- **Repeatability**: Apply the same changes consistently across environments
+- **Rollback**: Revert changes if something goes wrong
+- **Collaboration**: Share schema changes with your team
+- **Documentation**: Migrations serve as a history of your database evolution
+
+## Prerequisites
+
+Install the Supabase CLI:
+
+```bash
+# macOS
+brew install supabase/tap/supabase
+
+# Windows (via Scoop)
+scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+scoop install supabase
+
+# Linux
+brew install supabase/tap/supabase
+```
+
+## Creating Your First Migration
+
+### Step 1: Initialize Supabase
+
+```bash
+# Initialize Supabase in your project
+supabase init
+
+# Start local development stack
+supabase start
+```
+
+This creates a `supabase` folder with:
+- `supabase/migrations/` - Migration files
+- `supabase/seed.sql` - Seed data
+- `supabase/config.toml` - Configuration
+
+### Step 2: Create a Migration
+
+```bash
+# Create a new migration file
+supabase migration new create_employees_table
+```
+
+This creates a timestamped file:
+```
+supabase/migrations/20241205075911_create_employees_table.sql
+```
+
+### Step 3: Write the Migration
+
+Edit the migration file:
+
+```sql title="supabase/migrations/20241205075911_create_employees_table.sql"
+create table if not exists employees (
+  id bigint primary key generated always as identity,
+  name text not null,
+  email text unique,
+  department text,
+  created_at timestamptz default now()
+);
+
+-- Add an index
+create index idx_employees_department on employees(department);
+
+-- Enable Row Level Security
+alter table employees enable row level security;
+
+-- Create a policy
+create policy "Employees are viewable by authenticated users"
+  on employees for select
+  to authenticated
+  using (true);
+```
+
+### Step 4: Apply the Migration
+
+```bash
+# Apply pending migrations
+supabase migration up
+
+# Or apply a specific migration
+supabase migration up --target 20241205075911
+```
+
+## Real Example: Creating Tables
+
+Here's a real migration from the Supabase source:
+
+```sql title="supabase/migrations/20241205075911_create_employees_table.sql"
+create table if not exists employees (
+  id bigint primary key generated always as identity,
+  name text not null,
+  email text,
+  created_at timestamptz default now()
+);
+```
+
+## Adding Columns
+
+Create a new migration to modify existing tables:
+
+```bash
+supabase migration new add_department_to_employees
+```
+
+```sql title="supabase/migrations/20241205080043_add_department_to_employees.sql"
+alter table if exists public.employees
+  add column department text default 'Engineering';
+
+-- Add a check constraint
+alter table employees
+  add constraint valid_department
+  check (department in ('Engineering', 'Sales', 'Marketing', 'HR'));
+```
+
+## Real Example: Error Tracking Tables
+
+From Supabase source - creating a content schema with error tracking:
+
+```sql
+-- Create utility schema
+create schema if not exists utils;
+
+grant usage on schema utils to anon;
+grant usage on schema utils to authenticated;
+
+-- Reusable timestamp update function
+create or replace function utils.update_timestamp()
+returns trigger
+set search_path = ''
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+grant execute on function utils.update_timestamp() to anon;
+grant execute on function utils.update_timestamp() to authenticated;
+
+-- Create content schema
+create schema if not exists content;
+
+grant usage on schema content to anon;
+grant usage on schema content to authenticated;
+
+-- Service table
+create table if not exists content.service (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  deleted_at timestamptz default null
+);
+
+-- Add update trigger
+create trigger sync_updated_at_content_service
+  before update on content.service
+  for each row
+  execute function utils.update_timestamp();
+
+-- Soft delete rule
+create or replace rule soft_delete_content_service as
+  on delete to content.service
+  do instead (
+    update content.service
+    set deleted_at = now()
+    where id = old.id
+  );
+
+-- Enable RLS
+alter table content.service enable row level security;
+
+-- Create indexes
+create index if not exists idx_content_service_id_nondeleted_only
+  on content.service (id)
+  where deleted_at is null;
+
+create index if not exists idx_content_service_name_nondeleted_only
+  on content.service (name)
+  where deleted_at is null;
+
+-- Insert seed data
+insert into content.service (name) values
+  ('AUTH'),
+  ('REALTIME'),
+  ('STORAGE')
+on conflict (name) do nothing;
+
+-- Error tracking table
+create table if not exists content.error (
+  code text not null,
+  service uuid not null references content.service (id) on delete restrict,
+  http_status_code smallint,
+  message text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  deleted_at timestamptz default null,
+  primary key (service, code)
+);
+
+create trigger sync_updated_at_content_error
+  before update on content.error
+  for each row
+  execute function utils.update_timestamp();
+
+alter table content.error enable row level security;
+
+-- Grant permissions
+grant select on content.service to anon, authenticated;
+grant select on content.error to anon, authenticated;
+
+-- Create policies
+create policy content_service_anon_select_all
+  on content.service for select to anon
+  using (deleted_at is null);
+
+create policy content_error_anon_select_all
+  on content.error for select to anon
+  using (deleted_at is null);
+```
+
+## Real Example: Vector Search
+
+From Supabase source - setting up pgvector for AI embeddings:
+
+```sql title="supabase/migrations/20230126220613_doc_embeddings.sql"
+-- Enable vector extension
+create extension if not exists vector with schema public;
+
+-- Create page table
+create table "public"."page" (
+  id bigserial primary key,
+  path text not null unique,
+  checksum text,
+  meta jsonb
+);
+
+-- Create page sections with embeddings
+create table "public"."page_section" (
+  id bigserial primary key,
+  page_id bigint not null references public.page on delete cascade,
+  content text,
+  token_count int,
+  embedding vector(1536)  -- OpenAI embeddings dimension
+);
+
+-- Create index for vector similarity search
+create index on page_section
+  using ivfflat (embedding vector_cosine_ops)
+  with (lists = 100);
+```
+
+## Seeding Data
+
+Create a seed file for initial data:
+
+```sql title="supabase/seed.sql"
+-- Seed employees
+insert into public.employees (name, email, department)
+values
+  ('Alice Johnson', 'alice@example.com', 'Engineering'),
+  ('Bob Smith', 'bob@example.com', 'Sales'),
+  ('Carol White', 'carol@example.com', 'Marketing')
+on conflict (email) do nothing;
+
+-- Seed categories
+insert into public.categories (name)
+values
+  ('Electronics'),
+  ('Books'),
+  ('Clothing')
+on conflict (name) do nothing;
+```
+
+Apply seeds:
+
+```bash
+# Reset database and apply seeds
+supabase db reset
+
+# Or push with seeds to remote
+supabase db push --include-seed
+```
+
+## Using Dashboard to Generate Migrations
+
+Create tables in the Dashboard, then generate migration:
+
+```bash
+# Make changes in Dashboard, then generate diff
+supabase db diff -f create_products_table
+```
+
+This creates a migration file with your Dashboard changes:
+
+```sql title="supabase/migrations/[timestamp]_create_products_table.sql"
+create table "public"."products" (
+  "id" bigint primary key generated always as identity,
+  "name" text not null,
+  "price" numeric(10,2),
+  "category_id" bigint references categories(id)
+);
+```
+
+## Migration Patterns
+
+### Adding Indexes
+
+```sql
+-- Create regular index
+create index idx_products_category on products(category_id);
+
+-- Create partial index
+create index idx_active_products on products(status)
+  where deleted_at is null;
+
+-- Create unique index
+create unique index idx_users_email on users(lower(email));
+
+-- Create composite index
+create index idx_orders_user_date on orders(user_id, created_at desc);
+```
+
+### Adding Foreign Keys
+
+```sql
+-- Add foreign key constraint
+alter table orders
+  add constraint fk_orders_customer
+  foreign key (customer_id)
+  references customers(id)
+  on delete cascade;
+
+-- Add with validation
+alter table orders
+  add constraint fk_orders_product
+  foreign key (product_id)
+  references products(id)
+  on delete restrict;
+```
+
+### Renaming Columns
+
+```sql
+-- Rename column
+alter table products
+  rename column product_name to name;
+
+-- Rename table
+alter table old_table_name
+  rename to new_table_name;
+```
+
+### Dropping Columns Safely
+
+```sql
+-- First, drop dependent objects
+alter table products drop constraint if exists check_price;
+
+-- Then drop the column
+alter table products drop column if exists old_column;
+```
+
+### Changing Column Types
+
+```sql
+-- Simple type change
+alter table products
+  alter column price type numeric(12,2);
+
+-- With USING clause for conversion
+alter table products
+  alter column price type integer
+  using price::integer;
+```
+
+## Deploying Migrations
+
+### Deploy to Supabase Cloud
+
+```bash
+# Login to Supabase CLI
+supabase login
+
+# Link to your project
+supabase link --project-ref your-project-ref
+
+# Push migrations to remote
+supabase db push
+
+# Push with seed data
+supabase db push --include-seed
+```
+
+### CI/CD Integration
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy Database Migrations
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      
+      - name: Deploy migrations
+        run: supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+```
+
+## Rolling Back Migrations
+
+```bash
+# Rollback to a specific migration
+supabase migration down --target 20241205075911
+
+# Create a new migration to undo changes
+supabase migration new rollback_employees_department
+```
+
+```sql title="Migration to undo changes"
+-- Undo the department column addition
+alter table employees drop column if exists department;
+```
+
+## Migration Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use IF EXISTS / IF NOT EXISTS">
+    Makes migrations idempotent and safe to re-run:
+    ```sql
+    create table if not exists products (...);
+    alter table if exists products add column ...;
+    ```
+  </Accordion>
+
+  <Accordion title="Include rollback migrations">
+    Always know how to undo a migration if needed.
+  </Accordion>
+
+  <Accordion title="Test migrations locally first">
+    Use `supabase db reset` to test the full migration sequence.
+  </Accordion>
+
+  <Accordion title="Keep migrations focused">
+    One migration should do one thing. Split complex changes into multiple migrations.
+  </Accordion>
+
+  <Accordion title="Add comments">
+    Explain why a migration was needed:
+    ```sql
+    -- Add department column to support new org structure
+    -- See: https://github.com/yourorg/project/issues/123
+    alter table employees add column department text;
+    ```
+  </Accordion>
+
+  <Accordion title="Use transactions">
+    Migrations run in transactions by default. For explicit control:
+    ```sql
+    begin;
+      -- Your changes
+    commit;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Common Migration Tasks
+
+### Enable Extensions
+
+```sql
+create extension if not exists "uuid-ossp" with schema extensions;
+create extension if not exists pgvector with schema extensions;
+create extension if not exists postgis with schema public;
+```
+
+### Create Schemas
+
+```sql
+create schema if not exists private;
+create schema if not exists analytics;
+
+grant usage on schema private to service_role;
+```
+
+### Set Up Row Level Security
+
+```sql
+alter table products enable row level security;
+
+create policy "Users can view published products"
+  on products for select
+  to anon, authenticated
+  using (status = 'published');
+
+create policy "Users can manage their own products"
+  on products for all
+  to authenticated
+  using (auth.uid() = user_id);
+```
+
+### Create Functions and Triggers
+
+```sql
+-- Create function
+create or replace function update_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+-- Create trigger
+create trigger update_products_updated_at
+  before update on products
+  for each row
+  execute function update_updated_at();
+```
+
+## Troubleshooting
+
+### Lock Timeout Errors
+
+```sql
+-- Increase lock timeout at the start of migration
+set lock_timeout = '10s';
+
+-- Your migration statements
+alter table large_table add column new_column text;
+```
+
+### Migration Conflicts
+
+```bash
+# Pull latest migrations from remote
+supabase db pull
+
+# Resolve conflicts, then push
+supabase db push
+```
+
+### Reset Local Database
+
+```bash
+# Reset to clean state and reapply all migrations
+supabase db reset
+
+# Reset and skip seed data
+supabase db reset --skip-seed
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tables" icon="table" href="/database/tables">
+    Learn how to design effective table structures
+  </Card>
+  <Card title="Functions" icon="function" href="/database/functions">
+    Create database functions in migrations
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/reference/cli/introduction">
+    Complete Supabase CLI documentation
+  </Card>
+  <Card title="Local Development" icon="laptop-code" href="/guides/local-development">
+    Set up local development workflow
+  </Card>
+</CardGroup>

@@ -1,0 +1,459 @@
+---
+title: 'OAuth Authentication'
+description: 'Integrate social login with Google, GitHub, Apple, and other OAuth providers'
+---
+
+Supabase supports over 20 OAuth providers for social authentication. Users can sign in with their existing accounts from popular platforms.
+
+## Supported Providers
+
+Supabase supports these OAuth providers:
+
+- Google
+- GitHub
+- GitLab
+- Bitbucket
+- Azure (Microsoft)
+- Apple
+- Facebook
+- Discord
+- Twitch
+- Twitter
+- Slack
+- Spotify
+- LinkedIn
+- And many more...
+
+## Basic OAuth Sign In
+
+```javascript
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+})
+
+if (error) {
+  console.error('OAuth error:', error.message)
+}
+```
+
+## Provider Configuration
+
+Before using OAuth, configure each provider in your Supabase dashboard:
+
+<Steps>
+  <Step title="Open Dashboard">
+    Navigate to Authentication > Providers in your Supabase project
+  </Step>
+  
+  <Step title="Enable Provider">
+    Toggle on the provider you want to use (e.g., Google, GitHub)
+  </Step>
+  
+  <Step title="Add Credentials">
+    Enter your OAuth client ID and secret from the provider's developer console
+  </Step>
+  
+  <Step title="Configure Redirect URL">
+    Add the callback URL to your provider's app settings:
+    ```
+    https://<project-ref>.supabase.co/auth/v1/callback
+    ```
+  </Step>
+</Steps>
+
+## Google OAuth
+
+### Setup Google OAuth
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing
+3. Enable Google+ API
+4. Create OAuth 2.0 credentials
+5. Add authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`
+6. Copy Client ID and Secret to Supabase dashboard
+
+### Implementation
+
+<CodeGroup>
+
+```javascript Web
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    queryParams: {
+      access_type: 'offline',
+      prompt: 'consent',
+    },
+  },
+})
+```
+
+```typescript React Native / Expo
+import * as WebBrowser from 'expo-web-browser'
+import { supabase } from './lib/supabase'
+
+WebBrowser.maybeCompleteAuthSession()
+
+async function signInWithGoogle() {
+  const res = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: 'myapp://google-auth',
+      skipBrowserRedirect: true,
+    },
+  })
+
+  const { data: { url } } = res
+
+  if (!url) return
+
+  const result = await WebBrowser.openAuthSessionAsync(
+    url,
+    'myapp://google-auth',
+    { showInRecents: true }
+  )
+
+  if (result.type === 'success') {
+    const { url } = result
+    const params = extractParamsFromUrl(url)
+    
+    if (params.access_token && params.refresh_token) {
+      await supabase.auth.setSession({
+        access_token: params.access_token,
+        refresh_token: params.refresh_token,
+      })
+    }
+  }
+}
+
+function extractParamsFromUrl(url: string) {
+  const parsedUrl = new URL(url)
+  const hash = parsedUrl.hash.substring(1)
+  const params = new URLSearchParams(hash)
+
+  return {
+    access_token: params.get('access_token'),
+    refresh_token: params.get('refresh_token'),
+  }
+}
+```
+
+```dart Flutter
+await supabase.auth.signInWithOAuth(
+  OAuthProvider.google,
+  redirectTo: 'io.supabase.flutterquickstart://login-callback/',
+);
+```
+
+</CodeGroup>
+
+## GitHub OAuth
+
+### Setup GitHub OAuth
+
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Click "New OAuth App"
+3. Fill in application details
+4. Authorization callback URL: `https://<project-ref>.supabase.co/auth/v1/callback`
+5. Copy Client ID and Secret to Supabase dashboard
+
+### Implementation
+
+```javascript
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'github',
+  options: {
+    scopes: 'repo gist notifications',
+  },
+})
+```
+
+## Apple OAuth
+
+### Setup Apple Sign In
+
+1. Go to [Apple Developer Portal](https://developer.apple.com/)
+2. Create a new identifier for Sign in with Apple
+3. Configure Services ID
+4. Add return URL: `https://<project-ref>.supabase.co/auth/v1/callback`
+5. Copy Service ID and Key to Supabase dashboard
+
+### Implementation
+
+<CodeGroup>
+
+```javascript Web
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'apple',
+})
+```
+
+```typescript React Native (iOS)
+import * as AppleAuthentication from 'expo-apple-authentication'
+import { supabase } from './lib/supabase'
+
+export default function AppleSignIn() {
+  async function signInWithApple() {
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      })
+
+      if (credential.identityToken) {
+        const { data, error } = await supabase.auth.signInWithIdToken({
+          provider: 'apple',
+          token: credential.identityToken,
+        })
+        
+        if (error) {
+          console.error('Error:', error.message)
+        }
+      }
+    } catch (e) {
+      console.error('Apple sign in error:', e)
+    }
+  }
+
+  return (
+    <AppleAuthentication.AppleAuthenticationButton
+      buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+      buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+      cornerRadius={5}
+      style={{ width: 200, height: 44 }}
+      onPress={signInWithApple}
+    />
+  )
+}
+```
+
+</CodeGroup>
+
+## Request Additional Scopes
+
+Request extra permissions from OAuth providers:
+
+```javascript
+// GitHub - request repo access
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'github',
+  options: {
+    scopes: 'repo user:email',
+  },
+})
+
+// Google - request calendar access
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    scopes: 'https://www.googleapis.com/auth/calendar',
+  },
+})
+
+// Discord - request guilds
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'discord',
+  options: {
+    scopes: 'identify email guilds',
+  },
+})
+```
+
+## Handle OAuth Callback
+
+### Next.js App Router
+
+```typescript app/auth/callback/route.ts
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
+
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+
+  if (code) {
+    const cookieStore = cookies()
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    await supabase.auth.exchangeCodeForSession(code)
+  }
+
+  // URL to redirect to after sign in process completes
+  return NextResponse.redirect(new URL('/dashboard', request.url))
+}
+```
+
+### SvelteKit
+
+```typescript routes/auth/callback/+server.ts
+import { redirect } from '@sveltejs/kit'
+import type { RequestHandler } from './$types'
+
+export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
+  const code = url.searchParams.get('code')
+
+  if (code) {
+    await supabase.auth.exchangeCodeForSession(code)
+  }
+
+  throw redirect(303, '/dashboard')
+}
+```
+
+## Access Provider Tokens
+
+Access the OAuth provider's access token to call their APIs:
+
+```javascript
+const { data: { session } } = await supabase.auth.getSession()
+
+if (session?.provider_token) {
+  // Use the provider token to call their API
+  const response = await fetch('https://api.github.com/user/repos', {
+    headers: {
+      Authorization: `Bearer ${session.provider_token}`,
+    },
+  })
+  
+  const repos = await response.json()
+  console.log('User repos:', repos)
+}
+```
+
+<Note>
+  Provider tokens are only available for certain providers and must be requested with the appropriate scopes.
+</Note>
+
+## Link OAuth Accounts
+
+Link multiple OAuth providers to the same user:
+
+```javascript
+// User is already signed in
+const { data, error } = await supabase.auth.linkIdentity({
+  provider: 'google',
+})
+
+if (!error) {
+  console.log('Google account linked successfully')
+}
+```
+
+## Unlink OAuth Accounts
+
+```javascript
+const { data, error } = await supabase.auth.unlinkIdentity({
+  identity_id: 'identity-uuid',
+})
+```
+
+## Server-Side OAuth
+
+For server-side OAuth flows, use PKCE (Proof Key for Code Exchange):
+
+```javascript
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    redirectTo: 'http://localhost:3000/auth/callback',
+    skipBrowserRedirect: false,
+  },
+})
+
+// Redirect user to data.url
+window.location.href = data.url
+```
+
+## Mobile Deep Links
+
+Configure deep links for mobile OAuth:
+
+```javascript
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    redirectTo: 'myapp://auth/callback',
+    skipBrowserRedirect: true,
+  },
+})
+```
+
+**Configure deep linking:**
+
+<Tabs>
+  <Tab title="iOS">
+    Add to `Info.plist`:
+    ```xml
+    <key>CFBundleURLTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>myapp</string>
+        </array>
+      </dict>
+    </array>
+    ```
+  </Tab>
+  
+  <Tab title="Android">
+    Add to `AndroidManifest.xml`:
+    ```xml
+    <intent-filter>
+      <action android:name="android.intent.action.VIEW" />
+      <category android:name="android.intent.category.DEFAULT" />
+      <category android:name="android.intent.category.BROWSABLE" />
+      <data android:scheme="myapp" />
+    </intent-filter>
+    ```
+  </Tab>
+</Tabs>
+
+## Error Handling
+
+Common OAuth errors:
+
+| Error | Description | Solution |
+|-------|-------------|----------|
+| `provider_email_needs_verification` | Email not verified | Ask user to verify email with provider |
+| `provider_disabled` | Provider not enabled | Enable in dashboard |
+| `invalid_credentials` | Wrong client ID/secret | Check provider credentials |
+| `redirect_uri_mismatch` | Wrong callback URL | Update provider settings |
+
+## Security Considerations
+
+<Warning>
+  Always validate OAuth tokens on the server side before granting access to sensitive resources.
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Use HTTPS" icon="lock">
+    Always use HTTPS in production for OAuth callbacks
+  </Card>
+  
+  <Card title="Validate State" icon="shield">
+    Supabase automatically validates PKCE state parameters
+  </Card>
+  
+  <Card title="Rotate Secrets" icon="key">
+    Regularly rotate OAuth client secrets
+  </Card>
+  
+  <Card title="Minimal Scopes" icon="minimize">
+    Only request the scopes you actually need
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-Factor Auth" icon="shield-halved" href="/auth/mfa">
+    Add MFA for enhanced security
+  </Card>
+  
+  <Card title="Row Level Security" icon="database" href="/auth/row-level-security">
+    Control data access with RLS
+  </Card>
+</CardGroup>

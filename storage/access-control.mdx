@@ -1,0 +1,511 @@
+---
+title: 'Storage Access Control'
+description: 'Secure files with Row Level Security policies'
+---
+
+Supabase Storage uses PostgreSQL Row Level Security (RLS) to control access to files. This provides fine-grained control over who can upload, download, and delete files.
+
+## How Storage RLS Works
+
+Files in Storage are stored as rows in the `storage.objects` table. RLS policies on this table control access:
+
+```sql
+-- Storage objects are stored here
+select * from storage.objects;
+
+-- Columns:
+-- id, bucket_id, name, owner, created_at, updated_at, metadata
+```
+
+## Enable RLS
+
+RLS is automatically enabled on the `storage.objects` table. You need to create policies to allow access:
+
+```sql
+-- RLS is already enabled
+alter table storage.objects enable row level security;
+```
+
+<Warning>
+  Without any policies, no one can access files in private buckets. You must create policies to grant access.
+</Warning>
+
+## Public Buckets
+
+Public buckets allow anyone to read files, but you still need policies for write operations:
+
+```sql
+-- Allow public read access to a bucket
+create policy "Public Access"
+on storage.objects
+for select
+using ( bucket_id = 'avatars' );
+```
+
+Create a public bucket:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .createBucket('public-files', {
+    public: true,
+    fileSizeLimit: 5242880, // 5MB
+  })
+```
+
+## Basic Policies
+
+### Allow Authenticated Users to Upload
+
+```sql
+create policy "Authenticated users can upload"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'uploads'
+  and auth.role() = 'authenticated'
+);
+```
+
+### Users Can Access Their Own Files
+
+```sql
+-- Allow users to upload to their own folder
+create policy "Users can upload to own folder"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'user-files'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+
+-- Allow users to read their own files
+create policy "Users can read own files"
+on storage.objects
+for select
+using (
+  bucket_id = 'user-files'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+
+-- Allow users to delete their own files
+create policy "Users can delete own files"
+on storage.objects
+for delete
+using (
+  bucket_id = 'user-files'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+```
+
+## Folder-Based Access
+
+Organize files in folders and control access per folder:
+
+### Public Folder
+
+```sql
+create policy "Public folder is accessible to all"
+on storage.objects
+for select
+using (
+  bucket_id = 'documents'
+  and (storage.foldername(name))[1] = 'public'
+);
+```
+
+### Authenticated Folder
+
+```sql
+create policy "Authenticated users can access auth folder"
+on storage.objects
+for select
+using (
+  bucket_id = 'documents'
+  and (storage.foldername(name))[1] = 'authenticated'
+  and auth.role() = 'authenticated'
+);
+```
+
+### User-Specific Folders
+
+```sql
+-- Folder structure: avatars/{user-id}/avatar.png
+create policy "Users access their own avatar folder"
+on storage.objects
+for all
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+```
+
+## Advanced Policies
+
+### Team-Based Access
+
+Allow team members to access shared files:
+
+```sql
+-- Create team_members table
+create table team_members (
+  team_id uuid references teams(id),
+  user_id uuid references auth.users(id),
+  role text,
+  primary key (team_id, user_id)
+);
+
+-- Folder structure: team-files/{team-id}/document.pdf
+create policy "Team members can access team files"
+on storage.objects
+for select
+using (
+  bucket_id = 'team-files'
+  and (storage.foldername(name))[1]::uuid in (
+    select team_id::text from team_members
+    where user_id = (select auth.uid())
+  )
+);
+
+-- Only team admins can upload
+create policy "Team admins can upload"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'team-files'
+  and (storage.foldername(name))[1]::uuid in (
+    select team_id::text from team_members
+    where user_id = (select auth.uid())
+    and role = 'admin'
+  )
+);
+```
+
+### File Type Restrictions
+
+```sql
+-- Only allow image uploads
+create policy "Only images allowed"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'images'
+  and (storage.extension(name)) in ('jpg', 'jpeg', 'png', 'gif', 'webp')
+);
+```
+
+### Size-Based Restrictions
+
+```sql
+-- Limit file size to 5MB
+create policy "Max 5MB files"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'uploads'
+  and octet_length(decode(encode(metadata, 'escape'), 'escape')) < 5242880
+);
+```
+
+### Time-Based Access
+
+```sql
+-- Only allow uploads during business hours
+create policy "Business hours uploads only"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'documents'
+  and extract(hour from now()) between 9 and 17
+  and extract(dow from now()) between 1 and 5
+);
+```
+
+## Common Policy Examples
+
+### Avatar Upload Pattern
+
+```sql
+-- Users can upload/update their avatar
+create policy "Users can manage own avatar"
+on storage.objects
+for all
+using (
+  bucket_id = 'avatars'
+  and name = concat((select auth.uid()::text), '.png')
+);
+```
+
+### Shared Files with Owner
+
+```sql
+-- Table to track file sharing
+create table file_shares (
+  file_path text,
+  shared_with uuid references auth.users(id),
+  primary key (file_path, shared_with)
+);
+
+-- Owner and shared users can access
+create policy "Owner and shared users can access files"
+on storage.objects
+for select
+using (
+  bucket_id = 'shared-files'
+  and (
+    owner = (select auth.uid())
+    or name in (
+      select file_path from file_shares
+      where shared_with = (select auth.uid())
+    )
+  )
+);
+```
+
+## Helper Functions
+
+Supabase provides helper functions for storage policies:
+
+### storage.foldername()
+
+Extract folder path from file name:
+
+```sql
+select storage.foldername('users/123/profile.png');
+-- Returns: {users,123}
+
+select (storage.foldername('users/123/profile.png'))[1];
+-- Returns: users
+```
+
+### storage.filename()
+
+Extract file name:
+
+```sql
+select storage.filename('users/123/profile.png');
+-- Returns: profile.png
+```
+
+### storage.extension()
+
+Get file extension:
+
+```sql
+select storage.extension('document.pdf');
+-- Returns: pdf
+```
+
+## Testing Policies
+
+### Test Upload Access
+
+```javascript
+const file = new File(['test'], 'test.txt', { type: 'text/plain' })
+
+const { data, error } = await supabase
+  .storage
+  .from('user-files')
+  .upload(`${userId}/test.txt`, file)
+
+if (error) {
+  console.error('Upload blocked by RLS:', error.message)
+} else {
+  console.log('Upload successful')
+}
+```
+
+### Test Download Access
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('user-files')
+  .download('other-user-id/private.pdf')
+
+if (error) {
+  console.error('Download blocked by RLS:', error.message)
+} else {
+  console.log('Download successful')
+}
+```
+
+## Bypass RLS with Service Role
+
+Use the service role key to bypass RLS (server-side only):
+
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+// Server-side only - bypasses RLS
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
+
+// Upload file as admin (bypasses policies)
+const { data, error } = await supabaseAdmin
+  .storage
+  .from('private-files')
+  .upload('admin-file.pdf', file)
+```
+
+<Warning>
+  Never expose the service role key in client-side code. Only use it in secure server environments.
+</Warning>
+
+## Signed URLs for Private Files
+
+Generate temporary access URLs for private files:
+
+```javascript
+// Create signed URL that expires in 1 hour
+const { data, error } = await supabase
+  .storage
+  .from('private-documents')
+  .createSignedUrl('confidential.pdf', 3600)
+
+if (error) {
+  console.error('Error creating signed URL:', error)
+} else {
+  console.log('Signed URL:', data.signedUrl)
+  console.log('Expires at:', data.expiresAt)
+  
+  // Share this URL - it works even if user doesn't have direct access
+}
+```
+
+## Bucket Policies Dashboard
+
+View and edit policies in the Supabase dashboard:
+
+1. Navigate to Storage > Policies
+2. Select your bucket
+3. View existing policies
+4. Create new policies using the policy editor
+
+## Complete Example: Photo Sharing App
+
+```sql
+-- Users table (already exists in auth.users)
+
+-- Photo metadata table
+create table photos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id),
+  title text,
+  description text,
+  file_path text,
+  is_public boolean default false,
+  created_at timestamp with time zone default now()
+);
+
+alter table photos enable row level security;
+
+-- Users can view their own photos
+create policy "Users can view own photos"
+on photos for select
+using ( user_id = (select auth.uid()) );
+
+-- Users can view public photos
+create policy "Anyone can view public photos"
+on photos for select
+using ( is_public = true );
+
+-- Storage policies for photos bucket
+
+-- Users can upload to their folder
+create policy "Users can upload photos"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'photos'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+
+-- Users can read their own photos
+create policy "Users can read own photos"
+on storage.objects
+for select
+using (
+  bucket_id = 'photos'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+
+-- Users can read public photos
+create policy "Anyone can read public photos"
+on storage.objects
+for select
+using (
+  bucket_id = 'photos'
+  and name in (
+    select file_path from photos where is_public = true
+  )
+);
+
+-- Users can delete their own photos
+create policy "Users can delete own photos"
+on storage.objects
+for delete
+using (
+  bucket_id = 'photos'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+```
+
+## Debugging RLS Policies
+
+Check which policies are active:
+
+```sql
+-- List all storage policies
+select
+  policyname,
+  permissive,
+  roles,
+  cmd,
+  qual
+from pg_policies
+where tablename = 'objects'
+and schemaname = 'storage';
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Test Policies Thoroughly" icon="vial">
+    Test as different users to ensure policies work correctly
+  </Card>
+  
+  <Card title="Use Folder Structures" icon="folder">
+    Organize files in folders for easier policy management
+  </Card>
+  
+  <Card title="Principle of Least Privilege" icon="shield">
+    Grant minimum necessary permissions
+  </Card>
+  
+  <Card title="Audit File Access" icon="clipboard-list">
+    Regularly review and update policies
+  </Card>
+</CardGroup>
+
+## Common Errors
+
+| Error | Description | Solution |
+|-------|-------------|----------|
+| `new row violates row-level security policy` | Upload blocked by RLS | Check insert policies |
+| `Object not found` | Download blocked by RLS | Check select policies |
+| `Unauthorized` | No valid policy | Create appropriate policy |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Row Level Security" icon="database" href="/auth/row-level-security">
+    Learn more about RLS for database tables
+  </Card>
+  
+  <Card title="Storage Overview" icon="folder" href="/storage/overview">
+    Back to Storage overview
+  </Card>
+</CardGroup>

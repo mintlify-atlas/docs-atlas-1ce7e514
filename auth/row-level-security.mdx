@@ -1,0 +1,516 @@
+---
+title: 'Row Level Security'
+description: 'Control data access with PostgreSQL Row Level Security policies'
+---
+
+Row Level Security (RLS) is PostgreSQL's built-in authorization system that controls which rows users can access in database tables. Supabase leverages RLS to provide fine-grained access control.
+
+## Why Use RLS?
+
+RLS provides several advantages:
+
+- **Security at the Database Level**: Policies are enforced by PostgreSQL, not your application
+- **Fine-Grained Control**: Control access per row based on user identity
+- **Automatic Enforcement**: Works automatically with all Supabase client libraries
+- **Zero Trust**: Even compromised API keys can't bypass RLS
+
+<Warning>
+  Always enable RLS on tables containing user data. Without RLS, anyone with your anon key can access all data.
+</Warning>
+
+## Enable RLS
+
+Enable Row Level Security on a table:
+
+```sql
+alter table profiles enable row level security;
+```
+
+<Note>
+  When RLS is enabled without any policies, no one (except service role) can access the table. You must create policies to allow access.
+</Note>
+
+## Basic Policies
+
+### Public Read Access
+
+Allow anyone to read all rows:
+
+```sql
+-- 1. Create table
+create table profiles (
+  id uuid primary key default gen_random_uuid(),
+  username text,
+  avatar_url text,
+  created_at timestamp with time zone default now()
+);
+
+-- 2. Enable RLS
+alter table profiles enable row level security;
+
+-- 3. Create policy
+create policy "Public profiles are viewable by everyone"
+on profiles
+for select
+using ( true );
+```
+
+### User-Specific Access
+
+Users can only read and update their own data:
+
+```sql
+-- 1. Create table
+create table profiles (
+  id uuid primary key references auth.users(id),
+  username text,
+  bio text,
+  updated_at timestamp with time zone
+);
+
+-- 2. Enable RLS
+alter table profiles enable row level security;
+
+-- 3. Users can view their own profile
+create policy "Users can view their own profile"
+on profiles
+for select
+using ( (select auth.uid()) = id );
+
+-- 4. Users can update their own profile
+create policy "Users can update their own profile"
+on profiles
+for update
+using ( (select auth.uid()) = id );
+
+-- 5. Users can insert their own profile
+create policy "Users can insert their own profile"
+on profiles
+for insert
+with check ( (select auth.uid()) = id );
+```
+
+## Helper Functions
+
+Supabase provides helper functions for RLS policies:
+
+### auth.uid()
+
+Returns the current user's ID:
+
+```sql
+create policy "Users can access their own data"
+on user_data
+for all
+using ( user_id = (select auth.uid()) );
+```
+
+### auth.jwt()
+
+Access the full JWT token:
+
+```sql
+-- Check user role from JWT
+create policy "Admins can access all data"
+on admin_data
+for all
+using ( (select auth.jwt() ->> 'role') = 'admin' );
+
+-- Check custom claims
+create policy "Organization members only"
+on org_data
+for select
+using ( 
+  org_id = (select auth.jwt() -> 'app_metadata' ->> 'org_id')::uuid
+);
+```
+
+## Policy Examples
+
+### Authenticated Users Only
+
+```sql
+create policy "Authenticated users can read"
+on posts
+for select
+using ( auth.role() = 'authenticated' );
+```
+
+### Owner-Based Access
+
+```sql
+create policy "Users can manage their own posts"
+on posts
+for all
+using ( user_id = (select auth.uid()) );
+```
+
+### Team-Based Access
+
+Users can access data belonging to their team:
+
+```sql
+-- Teams table
+create table teams (
+  id uuid primary key default gen_random_uuid(),
+  name text not null
+);
+
+-- Team members junction table
+create table team_members (
+  team_id uuid references teams(id),
+  user_id uuid references auth.users(id),
+  role text,
+  primary key (team_id, user_id)
+);
+
+-- Projects table
+create table projects (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid references teams(id),
+  name text,
+  description text
+);
+
+alter table teams enable row level security;
+alter table team_members enable row level security;
+alter table projects enable row level security;
+
+-- Team members can view their teams
+create policy "Users can view teams they belong to"
+on teams
+for select
+using (
+  id in (
+    select team_id from team_members
+    where user_id = (select auth.uid())
+  )
+);
+
+-- Team members can view projects
+create policy "Team members can view team projects"
+on projects
+for select
+using (
+  team_id in (
+    select team_id from team_members
+    where user_id = (select auth.uid())
+  )
+);
+
+-- Only team admins can update projects
+create policy "Team admins can update projects"
+on projects
+for update
+using (
+  team_id in (
+    select team_id from team_members
+    where user_id = (select auth.uid())
+    and role = 'admin'
+  )
+);
+```
+
+### Time-Based Access
+
+```sql
+create policy "Users can only view published posts"
+on posts
+for select
+using (
+  status = 'published'
+  and published_at <= now()
+);
+```
+
+### Hierarchical Access
+
+```sql
+-- Users can view their own data and data of users they manage
+create policy "Managers can view subordinate data"
+on employee_data
+for select
+using (
+  user_id = (select auth.uid())
+  or manager_id = (select auth.uid())
+);
+```
+
+## Advanced Policies
+
+### Policy with Joins
+
+```sql
+create policy "Team members can update team details"
+on teams
+for update
+using (
+  (select auth.uid()) in (
+    select user_id from team_members
+    where team_id = id
+  )
+);
+```
+
+### Multiple Conditions
+
+```sql
+create policy "Complex access control"
+on documents
+for select
+using (
+  -- Owner can always access
+  owner_id = (select auth.uid())
+  -- OR document is public
+  or is_public = true
+  -- OR user is in shared_with list
+  or (select auth.uid()) = any(shared_with)
+  -- OR user is team member and doc is team-visible
+  or (
+    team_visible = true
+    and team_id in (
+      select team_id from team_members
+      where user_id = (select auth.uid())
+    )
+  )
+);
+```
+
+### Separate Policies by Operation
+
+```sql
+-- Read policy
+create policy "Anyone can read published posts"
+on posts
+for select
+using ( status = 'published' or owner_id = (select auth.uid()) );
+
+-- Insert policy
+create policy "Users can create posts"
+on posts
+for insert
+with check ( (select auth.uid()) = owner_id );
+
+-- Update policy
+create policy "Users can update own posts"
+on posts
+for update
+using ( owner_id = (select auth.uid()) )
+with check ( owner_id = (select auth.uid()) );
+
+-- Delete policy
+create policy "Users can delete own posts"
+on posts
+for delete
+using ( owner_id = (select auth.uid()) );
+```
+
+## Bypass RLS
+
+### Service Role
+
+The service role key bypasses RLS:
+
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+// This client bypasses RLS - use carefully!
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
+
+// Use for admin operations only
+const { data, error } = await supabaseAdmin
+  .from('users')
+  .select('*')
+```
+
+<Warning>
+  Never expose the service role key in client-side code. Only use it in secure server environments.
+</Warning>
+
+### Security Definer Functions
+
+Create functions that run with elevated privileges:
+
+```sql
+create or replace function get_user_stats()
+returns json
+language plpgsql
+security definer -- Run with function creator's privileges
+set search_path = public
+as $$
+declare
+  result json;
+begin
+  select json_build_object(
+    'total_users', count(*),
+    'active_users', count(*) filter (where last_seen > now() - interval '7 days')
+  ) into result
+  from auth.users;
+  
+  return result;
+end;
+$$;
+```
+
+## Testing RLS Policies
+
+### Test as Different User
+
+```sql
+-- Switch to specific user for testing
+set local role authenticated;
+set local request.jwt.claims.sub = 'user-uuid-here';
+
+-- Test your queries
+select * from profiles;
+
+-- Reset
+reset role;
+```
+
+### Using Supabase Client
+
+```javascript
+// Sign in as test user
+const { data: { user } } = await supabase.auth.signInWithPassword({
+  email: 'test@example.com',
+  password: 'password',
+})
+
+// Test RLS policies
+const { data, error } = await supabase
+  .from('profiles')
+  .select('*')
+
+// Should only return data allowed by RLS policies
+console.log(data)
+```
+
+## Debugging RLS
+
+Check which policies apply:
+
+```sql
+-- List all policies on a table
+select 
+  schemaname,
+  tablename,
+  policyname,
+  permissive,
+  roles,
+  cmd,
+  qual,
+  with_check
+from pg_policies
+where tablename = 'profiles';
+```
+
+Enable query logging to see RLS in action:
+
+```sql
+-- Show query plans (admin only)
+explain (analyze, verbose, buffers)
+select * from profiles;
+```
+
+## Common Patterns
+
+### Public Read, Authenticated Write
+
+```sql
+-- Anyone can read
+create policy "Public read access"
+on posts
+for select
+using ( true );
+
+-- Only authenticated users can insert
+create policy "Authenticated users can create"
+on posts
+for insert
+with check ( auth.role() = 'authenticated' );
+```
+
+### Soft Deletes with RLS
+
+```sql
+alter table posts add column deleted_at timestamp with time zone;
+
+create policy "Hide deleted posts"
+on posts
+for select
+using ( deleted_at is null );
+
+create policy "Users can soft delete own posts"
+on posts
+for update
+using ( owner_id = (select auth.uid()) )
+with check ( owner_id = (select auth.uid()) );
+```
+
+### Admin Override
+
+```sql
+create policy "Users access own data, admins access all"
+on user_data
+for all
+using (
+  user_id = (select auth.uid())
+  or (select auth.jwt() ->> 'role') = 'admin'
+);
+```
+
+## Performance Considerations
+
+<AccordionGroup>
+  <Accordion title="Index Foreign Keys">
+    Always index columns used in RLS policies:
+    ```sql
+    create index on posts(user_id);
+    create index on team_members(user_id);
+    ```
+  </Accordion>
+  
+  <Accordion title="Avoid Complex Joins">
+    Complex subqueries in policies can slow down queries. Consider denormalizing data or using materialized views.
+  </Accordion>
+  
+  <Accordion title="Use SECURITY DEFINER Sparingly">
+    Security definer functions bypass RLS and can be security risks if not carefully written.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Enable RLS Always" icon="shield">
+    Enable RLS on all tables with user data
+  </Card>
+  
+  <Card title="Test Thoroughly" icon="vial">
+    Test policies as different users and roles
+  </Card>
+  
+  <Card title="Keep Policies Simple" icon="minimize">
+    Simple policies are easier to understand and debug
+  </Card>
+  
+  <Card title="Document Policies" icon="file-lines">
+    Add comments explaining complex policy logic
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Storage Security" icon="folder" href="/storage/access-control">
+    Apply RLS concepts to file storage
+  </Card>
+  
+  <Card title="Database Guide" icon="database" href="/platform/database">
+    Learn more about PostgreSQL features
+  </Card>
+</CardGroup>

@@ -1,0 +1,583 @@
+---
+title: Configuration
+description: Configure your self-hosted Supabase installation
+---
+
+This guide covers all configuration options for self-hosted Supabase, from environment variables to service-specific settings.
+
+## Environment Variables
+
+All configuration is managed through the `.env` file in the `docker` directory.
+
+### Core Secrets
+
+<Warning>
+  **Never use default values in production!** Generate unique, strong secrets for each installation.
+</Warning>
+
+```bash .env
+# PostgreSQL root password
+POSTGRES_PASSWORD=your-super-secret-and-long-postgres-password
+
+# JWT secret (min 32 characters)
+JWT_SECRET=your-super-secret-jwt-token-with-at-least-32-characters-long
+
+# Dashboard authentication
+DASHBOARD_USERNAME=supabase
+DASHBOARD_PASSWORD=this_password_is_insecure_and_should_be_updated
+```
+
+### Generating Secrets
+
+Use the provided utility script:
+
+```bash
+# Generate all keys automatically
+sh ./utils/generate-keys.sh
+```
+
+Or generate manually:
+
+```bash
+# Random password (32 characters)
+openssl rand -base64 32
+
+# JWT secret (64 characters)
+openssl rand -base64 64 | tr -d '\n'
+
+# Hex key (32 bytes)
+openssl rand -hex 32
+```
+
+### API Keys
+
+JWT-based API keys for client authentication:
+
+```bash
+# Anonymous (public) key - safe to expose in client apps
+ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlhdCI6MTY0MTc2OTIwMCwiZXhwIjoxNzk5NTM1NjAwfQ.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE
+
+# Service role (admin) key - NEVER expose in client apps
+SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaWF0IjoxNjQxNzY5MjAwLCJleHAiOjE3OTk1MzU2MDB9.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q
+```
+
+<Info>
+  Generate new keys using the [JWT tool](https://supabase.com/docs/guides/self-hosting/docker#api-keys) with your custom `JWT_SECRET`.
+</Info>
+
+### URLs and Networking
+
+```bash
+# Public URL for API endpoints (change for production)
+SUPABASE_PUBLIC_URL=http://localhost:8000
+
+# External URL for OAuth callbacks
+API_EXTERNAL_URL=http://localhost:8000
+
+# Your application's URL
+SITE_URL=http://localhost:3000
+
+# Additional redirect URLs (comma-separated)
+ADDITIONAL_REDIRECT_URLS=https://app.yourdomain.com,https://staging.yourdomain.com
+```
+
+<Tip>
+  For production, use your actual domain: `https://api.yourdomain.com`
+</Tip>
+
+### Database Configuration
+
+```bash
+# Database connection
+POSTGRES_HOST=db
+POSTGRES_DB=postgres
+POSTGRES_PORT=5432
+
+# Default database schemas exposed via API
+PGRST_DB_SCHEMAS=public,storage,graphql_public
+```
+
+### Connection Pooling (Supavisor)
+
+```bash
+# Transaction mode port
+POOLER_PROXY_PORT_TRANSACTION=6543
+
+# Pool configuration
+POOLER_DEFAULT_POOL_SIZE=20
+POOLER_MAX_CLIENT_CONN=100
+
+# Unique tenant ID
+POOLER_TENANT_ID=your-tenant-id
+
+# Internal pool size
+POOLER_DB_POOL_SIZE=5
+```
+
+### Authentication Settings
+
+```bash
+# JWT configuration
+JWT_EXPIRY=3600  # 1 hour in seconds
+
+# Email authentication
+ENABLE_EMAIL_SIGNUP=true
+ENABLE_EMAIL_AUTOCONFIRM=false  # Set true for development
+
+# Phone authentication
+ENABLE_PHONE_SIGNUP=false
+ENABLE_PHONE_AUTOCONFIRM=false
+
+# Anonymous users
+ENABLE_ANONYMOUS_USERS=false
+
+# Disable all signups (login only)
+DISABLE_SIGNUP=false
+```
+
+### SMTP Configuration
+
+Configure email sending for auth emails:
+
+```bash
+# SMTP server details
+SMTP_ADMIN_EMAIL=admin@yourdomain.com
+SMTP_HOST=smtp.sendgrid.net
+SMTP_PORT=587
+SMTP_USER=apikey
+SMTP_PASS=your-sendgrid-api-key
+SMTP_SENDER_NAME=Your App Name
+
+# Email templates
+MAILER_URLPATHS_INVITE=/auth/v1/verify
+MAILER_URLPATHS_CONFIRMATION=/auth/v1/verify
+MAILER_URLPATHS_RECOVERY=/auth/v1/verify
+MAILER_URLPATHS_EMAIL_CHANGE=/auth/v1/verify
+```
+
+<Tabs>
+  <Tab title="SendGrid">
+    ```bash
+    SMTP_HOST=smtp.sendgrid.net
+    SMTP_PORT=587
+    SMTP_USER=apikey
+    SMTP_PASS=SG.your_sendgrid_api_key
+    ```
+  </Tab>
+  
+  <Tab title="AWS SES">
+    ```bash
+    SMTP_HOST=email-smtp.us-east-1.amazonaws.com
+    SMTP_PORT=587
+    SMTP_USER=your_ses_smtp_username
+    SMTP_PASS=your_ses_smtp_password
+    ```
+  </Tab>
+  
+  <Tab title="Mailgun">
+    ```bash
+    SMTP_HOST=smtp.mailgun.org
+    SMTP_PORT=587
+    SMTP_USER=postmaster@yourdomain.com
+    SMTP_PASS=your_mailgun_password
+    ```
+  </Tab>
+  
+  <Tab title="Gmail">
+    ```bash
+    SMTP_HOST=smtp.gmail.com
+    SMTP_PORT=587
+    SMTP_USER=your-email@gmail.com
+    SMTP_PASS=your_app_specific_password
+    ```
+    
+    <Warning>
+      Gmail requires [App Password](https://support.google.com/accounts/answer/185833), not your regular password.
+    </Warning>
+  </Tab>
+</Tabs>
+
+### OAuth Providers
+
+Enable third-party authentication:
+
+```bash
+# Google OAuth
+GOOGLE_ENABLED=true
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_SECRET=your-google-client-secret
+
+# GitHub OAuth
+GITHUB_ENABLED=true
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_SECRET=your-github-client-secret
+
+# Azure OAuth
+AZURE_ENABLED=true
+AZURE_CLIENT_ID=your-azure-client-id
+AZURE_SECRET=your-azure-client-secret
+```
+
+Uncomment the corresponding sections in `docker-compose.yml`:
+
+```yaml
+auth:
+  environment:
+    GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_ENABLED}
+    GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+    GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_SECRET}
+    GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${API_EXTERNAL_URL}/auth/v1/callback
+```
+
+### Storage Configuration
+
+**Local File Storage**:
+
+```bash
+STORAGE_BACKEND=file
+GLOBAL_S3_BUCKET=supabase-storage
+FILE_STORAGE_BACKEND_PATH=/var/lib/storage
+```
+
+**S3-Compatible Storage**:
+
+```bash
+STORAGE_BACKEND=s3
+GLOBAL_S3_BUCKET=your-bucket-name
+GLOBAL_S3_ENDPOINT=https://s3.amazonaws.com
+GLOBAL_S3_REGION=us-east-1
+GLOBAL_S3_PROTOCOL=https
+GLOBAL_S3_FORCE_PATH_STYLE=false
+
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+```
+
+**S3 Protocol Access**:
+
+```bash
+# Enable S3-compatible API access
+S3_PROTOCOL_ACCESS_KEY_ID=your-access-key-id
+S3_PROTOCOL_ACCESS_KEY_SECRET=your-secret-access-key
+```
+
+### Image Transformations
+
+```bash
+# Enable image processing
+ENABLE_IMAGE_TRANSFORMATION=true
+IMGPROXY_ENABLE_WEBP_DETECTION=true
+```
+
+### Analytics & Logging
+
+```bash
+# Logflare API tokens
+LOGFLARE_PUBLIC_ACCESS_TOKEN=your-super-secret-and-long-logflare-key-public
+LOGFLARE_PRIVATE_ACCESS_TOKEN=your-super-secret-and-long-logflare-key-private
+
+# Analytics backend (postgres or bigquery)
+NEXT_ANALYTICS_BACKEND_PROVIDER=postgres
+```
+
+### Edge Functions
+
+```bash
+# JWT verification for function invocations
+FUNCTIONS_VERIFY_JWT=true
+```
+
+### Advanced Settings
+
+```bash
+# Realtime configuration
+REGION=local
+SECRET_KEY_BASE=UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq
+
+# Supavisor encryption
+VAULT_ENC_KEY=your-32-character-encryption-key
+
+# Studio encryption
+PG_META_CRYPTO_KEY=your-encryption-key-32-chars-min
+
+# Studio defaults
+STUDIO_DEFAULT_ORGANIZATION=Default Organization
+STUDIO_DEFAULT_PROJECT=Default Project
+
+# OpenAI integration (optional)
+OPENAI_API_KEY=sk-your-openai-key
+```
+
+## Service-Specific Configuration
+
+### PostgreSQL
+
+Customize Postgres settings in `volumes/db/postgresql.conf`:
+
+```conf
+# Memory settings
+shared_buffers = 256MB
+effective_cache_size = 1GB
+work_mem = 4MB
+maintenance_work_mem = 64MB
+
+# Connection settings
+max_connections = 200
+
+# WAL settings for replication
+wal_level = logical
+max_wal_senders = 10
+max_replication_slots = 10
+```
+
+Restart database to apply:
+
+```bash
+docker compose restart db
+```
+
+### Kong API Gateway
+
+Edit `volumes/api/kong.yml` to customize routes and plugins:
+
+```yaml
+services:
+  - name: auth-v1-open
+    url: http://auth:9999/verify
+    routes:
+      - name: auth-v1-open
+        strip_path: true
+        paths:
+          - /auth/v1/verify
+    plugins:
+      - name: cors
+```
+
+Restart Kong:
+
+```bash
+docker compose restart kong
+```
+
+### Vector Logging
+
+Configure log pipeline in `volumes/logs/vector.yml`:
+
+```yaml
+sources:
+  docker_logs:
+    type: docker_logs
+    
+sinks:
+  postgres:
+    type: postgresql
+    inputs:
+      - docker_logs
+    endpoint: postgresql://supabase_admin:${POSTGRES_PASSWORD}@db:5432/_supabase
+```
+
+## Database Backups
+
+### Manual Backup
+
+```bash
+# Dump entire database
+docker exec supabase-db pg_dump -U postgres postgres > backup.sql
+
+# Dump specific schema
+docker exec supabase-db pg_dump -U postgres -n public postgres > public_schema.sql
+
+# Dump only data
+docker exec supabase-db pg_dump -U postgres --data-only postgres > data.sql
+```
+
+### Automated Backups
+
+Create a backup script:
+
+```bash backup.sh
+#!/bin/bash
+BACKUP_DIR="/backups"
+DATESTAMP=$(date +%Y%m%d_%H%M%S)
+FILENAME="supabase_backup_${DATESTAMP}.sql.gz"
+
+# Create backup
+docker exec supabase-db pg_dump -U postgres postgres | gzip > "${BACKUP_DIR}/${FILENAME}"
+
+# Keep only last 7 days
+find ${BACKUP_DIR} -name "supabase_backup_*.sql.gz" -mtime +7 -delete
+
+echo "Backup completed: ${FILENAME}"
+```
+
+Schedule with cron:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Daily backup at 2 AM
+0 2 * * * /path/to/backup.sh
+```
+
+### Restore from Backup
+
+```bash
+# Stop services
+docker compose stop
+
+# Restore database
+gunzip -c backup.sql.gz | docker exec -i supabase-db psql -U postgres postgres
+
+# Restart services
+docker compose start
+```
+
+## Point-in-Time Recovery (PITR)
+
+Enable WAL archiving for PITR:
+
+<Steps>
+  <Step title="Configure WAL Archiving">
+    Add to `volumes/db/postgresql.conf`:
+    
+    ```conf
+    wal_level = replica
+    archive_mode = on
+    archive_command = 'test ! -f /var/lib/postgresql/wal_archive/%f && cp %p /var/lib/postgresql/wal_archive/%f'
+    ```
+  </Step>
+  
+  <Step title="Create Archive Directory">
+    ```bash
+    mkdir -p volumes/db/wal_archive
+    chmod 700 volumes/db/wal_archive
+    ```
+  </Step>
+  
+  <Step title="Take Base Backup">
+    ```bash
+    docker exec supabase-db pg_basebackup -U postgres -D /var/lib/postgresql/base_backup -Ft -z -P
+    ```
+  </Step>
+  
+  <Step title="Restore to Point in Time">
+    Create `recovery.conf`:
+    
+    ```conf
+    restore_command = 'cp /var/lib/postgresql/wal_archive/%f %p'
+    recovery_target_time = '2026-03-04 12:00:00'
+    ```
+  </Step>
+</Steps>
+
+## Performance Tuning
+
+### Database Optimization
+
+```sql
+-- Analyze query performance
+EXPLAIN ANALYZE SELECT * FROM your_table;
+
+-- Create indexes
+CREATE INDEX idx_user_email ON users(email);
+CREATE INDEX idx_posts_created ON posts(created_at DESC);
+
+-- Vacuum database
+VACUUM ANALYZE;
+
+-- Check table sizes
+SELECT
+    schemaname,
+    tablename,
+    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
+FROM pg_tables
+WHERE schemaname = 'public'
+ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+```
+
+### Connection Pooling
+
+Always use Supavisor for web applications:
+
+```javascript
+// Use transaction mode port 6543
+const supabase = createClient(
+  'http://localhost:8000',
+  'your-anon-key',
+  {
+    db: {
+      schema: 'public',
+    },
+    global: {
+      headers: { 'x-connection-encrypted': 'false' },
+    },
+  }
+)
+```
+
+### Resource Limits
+
+Set Docker resource limits in `docker-compose.yml`:
+
+```yaml
+db:
+  deploy:
+    resources:
+      limits:
+        cpus: '2'
+        memory: 4G
+      reservations:
+        cpus: '1'
+        memory: 2G
+```
+
+## Health Checks
+
+Monitor service health:
+
+```bash
+# Check all services
+docker compose ps
+
+# HTTP health checks
+curl http://localhost:8000/health
+curl http://localhost:8000/auth/v1/health
+curl http://localhost:8000/rest/v1/
+```
+
+Create monitoring script:
+
+```bash health-check.sh
+#!/bin/bash
+
+services=("kong:8000" "studio:3000" "db:5432")
+
+for service in "${services[@]}"; do
+  name=$(echo $service | cut -d: -f1)
+  port=$(echo $service | cut -d: -f2)
+  
+  if nc -z localhost $port 2>/dev/null; then
+    echo "✓ $name is healthy"
+  else
+    echo "✗ $name is down"
+  fi
+done
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security" icon="shield" href="/self-hosting/security">
+    Harden your installation for production
+  </Card>
+  <Card title="Updates" icon="rotate" href="/self-hosting/updates">
+    Keep services up-to-date
+  </Card>
+  <Card title="Docker Guide" icon="docker" href="/self-hosting/docker">
+    Back to Docker installation
+  </Card>
+  <Card title="Monitoring" icon="chart-line">
+    Set up monitoring and alerts
+  </Card>
+</CardGroup>

@@ -1,0 +1,470 @@
+---
+title: 'Data Encryption'
+description: 'Understanding encryption at rest and in transit in Supabase'
+---
+
+Supabase encrypts all data by default, both at rest and in transit, ensuring your data is protected throughout its lifecycle. This encryption is transparent and requires no configuration.
+
+## Encryption Overview
+
+Supabase implements a comprehensive encryption strategy:
+
+<CardGroup cols={2}>
+  <Card title="At Rest" icon="database">
+    All data stored on disk is encrypted with AES-256
+  </Card>
+  
+  <Card title="In Transit" icon="network-wired">
+    All connections use TLS 1.2+ encryption
+  </Card>
+  
+  <Card title="Backups" icon="floppy-disk">
+    Database backups are encrypted before storage
+  </Card>
+  
+  <Card title="Automatic" icon="magic">
+    No configuration needed, always enabled
+  </Card>
+</CardGroup>
+
+## Encryption at Rest
+
+### Database Storage
+
+All data stored in your Postgres database is encrypted at rest using:
+
+- **Algorithm**: AES-256 encryption
+- **Scope**: All database files, indexes, and WAL files
+- **Key Management**: Managed by cloud provider infrastructure
+- **Performance**: Transparent encryption with minimal overhead
+
+<Info>
+Encryption at rest is provided by the underlying cloud infrastructure and is always enabled. You cannot disable it.
+</Info>
+
+### What is Encrypted
+
+The following are encrypted at rest:
+
+- **Database tables**: All user data in tables
+- **Indexes**: All database indexes
+- **Write-Ahead Logs (WAL)**: Transaction logs
+- **Backups**: Daily backups and PITR snapshots
+- **Storage objects**: Files uploaded to Supabase Storage
+- **Temporary files**: Any temporary database files
+
+### Storage Encryption
+
+Files uploaded to Supabase Storage are also encrypted:
+
+```javascript
+// Files are automatically encrypted when uploaded
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .upload('public/avatar1.png', file)
+
+// Encryption is transparent - no special handling needed
+```
+
+## Encryption in Transit
+
+All network communication is encrypted using TLS (Transport Layer Security).
+
+### HTTPS for APIs
+
+All HTTP APIs use TLS 1.2 or higher:
+
+- **PostgREST** (REST API): `https://your-project.supabase.co/rest/v1`
+- **GoTrue** (Auth): `https://your-project.supabase.co/auth/v1`
+- **Realtime**: `wss://your-project.supabase.co/realtime/v1` (WSS = WebSocket Secure)
+- **Storage**: `https://your-project.supabase.co/storage/v1`
+
+<Note>
+HTTPS is enforced on all API endpoints. HTTP requests are automatically redirected to HTTPS.
+</Note>
+
+### PostgreSQL Connections
+
+Database connections support SSL/TLS encryption:
+
+```bash
+# SSL is enabled by default
+psql "postgresql://postgres:[password]@db.your-project.supabase.co:5432/postgres"
+
+# Explicitly require SSL
+psql "postgresql://postgres:[password]@db.your-project.supabase.co:5432/postgres?sslmode=require"
+```
+
+### SSL Modes
+
+PostgreSQL supports multiple SSL modes:
+
+| Mode | Description | Protection |
+|------|-------------|------------|
+| `disable` | No SSL | None (not recommended) |
+| `allow` | Try SSL, fallback to unencrypted | Opportunistic |
+| `prefer` | Prefer SSL, fallback to unencrypted | Opportunistic (default) |
+| `require` | Require SSL, but don't verify cert | Prevents eavesdropping |
+| `verify-ca` | Require SSL, verify CA | Prevents MITM attacks |
+| `verify-full` | Require SSL, verify CA and hostname | **Strongest protection** |
+
+<Tip>
+For production applications, use `verify-full` for maximum security.
+</Tip>
+
+### Using verify-full Mode
+
+<Steps>
+  <Step title="Download the CA certificate">
+    Get your CA certificate from the Dashboard:
+    
+    1. Go to **Database** → **Settings**
+    2. Scroll to **SSL Configuration**
+    3. Download **Certificate Authority (CA)** certificate
+  </Step>
+  
+  <Step title="Add to trusted CAs">
+    Add the certificate to PostgreSQL's trusted CAs:
+    
+    ```bash
+    cat prod-ca-2021.crt >> ~/.postgresql/root.crt
+    ```
+  </Step>
+  
+  <Step title="Connect with verify-full">
+    Connect using the highest security mode:
+    
+    ```bash
+    psql "postgresql://postgres:[password]@db.your-project.supabase.co:5432/postgres?sslmode=verify-full"
+    ```
+    
+    Or with connection string:
+    
+    ```javascript
+    const { Pool } = require('pg')
+    
+    const pool = new Pool({
+      host: 'db.your-project.supabase.co',
+      port: 5432,
+      database: 'postgres',
+      user: 'postgres',
+      password: 'your-password',
+      ssl: {
+        rejectUnauthorized: true,
+        ca: fs.readFileSync('prod-ca-2021.crt').toString(),
+      },
+    })
+    ```
+  </Step>
+</Steps>
+
+## SSL Enforcement
+
+Enforce SSL for all database connections:
+
+### Enable SSL Enforcement
+
+<Tabs>
+  <Tab title="Dashboard">
+    1. Go to **Database** → **Settings**
+    2. Find **SSL Configuration**
+    3. Enable **Enforce SSL on incoming connections**
+    4. Click **Confirm**
+  </Tab>
+  
+  <Tab title="CLI">
+    ```bash
+    supabase ssl-enforcement \
+      --project-ref <your-ref> \
+      update --enable-db-ssl-enforcement \
+      --experimental
+    ```
+  </Tab>
+  
+  <Tab title="API">
+    ```bash
+    curl -X PUT "https://api.supabase.com/v1/projects/$PROJECT_REF/ssl-enforcement" \
+      -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "requestedConfig": {
+          "database": true
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Enabling SSL enforcement triggers a brief database reboot (usually seconds, longer for large databases).
+</Warning>
+
+### Check SSL Status
+
+Verify SSL enforcement is enabled:
+
+```bash
+supabase ssl-enforcement --project-ref <your-ref> get --experimental
+```
+
+Output:
+```
+SSL is being enforced.
+```
+
+## Client Library Encryption
+
+### JavaScript/TypeScript
+
+The Supabase client automatically uses HTTPS:
+
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+// Automatically uses HTTPS
+const supabase = createClient(
+  'https://your-project.supabase.co', // HTTPS required
+  'your-anon-key'
+)
+```
+
+### Python
+
+```python
+from supabase import create_client, Client
+
+# Automatically uses HTTPS
+url: str = "https://your-project.supabase.co"
+key: str = "your-anon-key"
+supabase: Client = create_client(url, key)
+```
+
+### Flutter/Dart
+
+```dart
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+await Supabase.initialize(
+  url: 'https://your-project.supabase.co', // HTTPS enforced
+  anonKey: 'your-anon-key',
+);
+```
+
+## Application-Level Encryption
+
+For additional security, implement application-level encryption for sensitive fields:
+
+### Example: Encrypting Sensitive Data
+
+```javascript
+import { createClient } from '@supabase/supabase-js'
+import CryptoJS from 'crypto-js'
+
+const supabase = createClient(url, key)
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY // Store securely!
+
+// Encrypt before storing
+const encryptField = (text) => {
+  return CryptoJS.AES.encrypt(text, ENCRYPTION_KEY).toString()
+}
+
+// Decrypt after retrieving  
+const decryptField = (ciphertext) => {
+  const bytes = CryptoJS.AES.decrypt(ciphertext, ENCRYPTION_KEY)
+  return bytes.toString(CryptoJS.enc.Utf8)
+}
+
+// Store encrypted data
+const { data, error } = await supabase
+  .from('user_secrets')
+  .insert({
+    user_id: userId,
+    ssn: encryptField('123-45-6789'),
+    credit_card: encryptField('4111-1111-1111-1111')
+  })
+
+// Retrieve and decrypt
+const { data: secrets } = await supabase
+  .from('user_secrets')
+  .select('*')
+  .eq('user_id', userId)
+  .single()
+
+const decryptedSSN = decryptField(secrets.ssn)
+```
+
+<Warning>
+Application-level encryption adds security but:
+- Cannot be queried or indexed by the database
+- Adds complexity to your application
+- Requires secure key management
+</Warning>
+
+## Key Management
+
+### Platform Encryption Keys
+
+Supabase manages encryption keys for:
+
+- **At-rest encryption**: Cloud provider managed keys
+- **TLS certificates**: Automatically renewed
+- **JWT secrets**: Rotatable via Dashboard
+
+<Info>
+Platform encryption keys are managed by Supabase and the underlying cloud infrastructure. You cannot access or rotate these keys.
+</Info>
+
+### Application Keys
+
+Manage your API keys securely:
+
+<Steps>
+  <Step title="Store securely">
+    Use environment variables, never hardcode:
+    
+    ```bash .env
+    SUPABASE_URL=https://your-project.supabase.co
+    SUPABASE_ANON_KEY=your-anon-key
+    SUPABASE_SERVICE_ROLE_KEY=your-service-key
+    ```
+  </Step>
+  
+  <Step title="Rotate if compromised">
+    If keys are exposed:
+    
+    1. Go to **Settings** → **API**
+    2. Click **Generate new key**
+    3. Update applications
+    4. Revoke old key
+  </Step>
+  
+  <Step title="Use appropriate keys">
+    - **anon key**: Client-side applications
+    - **service_role key**: Server-side only, never in clients
+  </Step>
+</Steps>
+
+## Compliance
+
+Supabase encryption meets compliance requirements:
+
+### Certifications
+
+- **SOC 2 Type II**: Audited encryption controls
+- **GDPR**: EU data protection requirements
+- **HIPAA**: Healthcare data (Enterprise plan)
+- **ISO 27001**: Information security standards
+
+### Data Residency
+
+Choose your database region for data residency:
+
+- **US East**: Virginia
+- **US West**: Oregon  
+- **EU West**: Ireland
+- **EU Central**: Frankfurt
+- **AP Southeast**: Singapore
+- **AP Northeast**: Tokyo
+- **AP South**: Mumbai
+
+<Note>
+All data, including backups, remains in your selected region.
+</Note>
+
+## Best Practices
+
+<Steps>
+  <Step title="Always use HTTPS">
+    Never use `http://` in production - always `https://`
+  </Step>
+  
+  <Step title="Enable SSL enforcement">
+    Require SSL for all database connections
+  </Step>
+  
+  <Step title="Use verify-full for database">
+    Maximum security with certificate verification
+  </Step>
+  
+  <Step title="Encrypt sensitive fields">
+    Add application-level encryption for highly sensitive data
+  </Step>
+  
+  <Step title="Secure API keys">
+    Store in environment variables, rotate if exposed
+  </Step>
+  
+  <Step title="Enable Point-in-Time Recovery">
+    Encrypted backups with fine-grained recovery
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="SSL connection failed">
+    **Error**: `SSL connection has been closed unexpectedly`
+    
+    **Solution**:
+    - Verify SSL is supported by your client
+    - Check SSL mode: try `sslmode=require`
+    - Ensure firewall allows SSL connections
+    - Download and use CA certificate for verify-full
+  </Accordion>
+  
+  <Accordion title="Certificate verification failed">
+    **Error**: `certificate verify failed`
+    
+    **Solution**:
+    - Download latest CA certificate from Dashboard
+    - Ensure certificate is in correct location (`~/.postgresql/root.crt`)
+    - Check certificate hasn't expired
+    - Verify hostname matches certificate
+  </Accordion>
+  
+  <Accordion title="Client doesn't support SSL">
+    **Error**: `SSL is not supported`
+    
+    **Solution**:
+    - Update client library to latest version
+    - Check if SSL/TLS is compiled in client
+    - Use `sslmode=prefer` to allow fallback (not recommended for production)
+  </Accordion>
+</AccordionGroup>
+
+## Encryption Checklist
+
+Before going to production:
+
+<Checklist>
+  - [ ] SSL enforcement enabled for database
+  - [ ] All API calls use HTTPS (not HTTP)
+  - [ ] Database connections use `sslmode=verify-full`
+  - [ ] CA certificate downloaded and installed
+  - [ ] API keys stored securely (environment variables)
+  - [ ] service_role key never in client-side code
+  - [ ] Point-in-Time Recovery enabled (for large DBs)
+  - [ ] Sensitive fields encrypted at application level (if needed)
+  - [ ] Compliance requirements verified
+</Checklist>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Network Security" icon="network-wired" href="./network">
+    Configure IP restrictions and network rules
+  </Card>
+  
+  <Card title="Row Level Security" icon="shield" href="./row-level-security">
+    Implement granular data access control
+  </Card>
+  
+  <Card title="Production Checklist" icon="clipboard-check" href="/platform/production-checklist">
+    Complete pre-launch security review
+  </Card>
+  
+  <Card title="Compliance" icon="certificate" href="/platform/compliance">
+    Learn about compliance certifications
+  </Card>
+</CardGroup>

@@ -1,0 +1,230 @@
+---
+title: 'Database Overview'
+description: 'Work with PostgreSQL databases through Supabase'
+---
+
+Every Supabase project comes with a full [PostgreSQL](https://www.postgresql.org/) database, one of the world's most stable and advanced relational databases. Supabase provides a complete database management experience through the Dashboard, CLI, and direct SQL access.
+
+## What is PostgreSQL?
+
+PostgreSQL (often called "Postgres") is a powerful, open source object-relational database system with over 35 years of active development. It has earned a strong reputation for reliability, feature robustness, and performance.
+
+### Key Features
+
+<CardGroup cols={2}>
+  <Card title="ACID Compliance" icon="shield-check">
+    Full transactional support with atomicity, consistency, isolation, and durability guarantees
+  </Card>
+  <Card title="Rich Data Types" icon="database">
+    Support for JSON, arrays, geometric types, ranges, and custom types
+  </Card>
+  <Card title="Advanced Indexing" icon="magnifying-glass">
+    B-tree, Hash, GiST, SP-GiST, GIN, and BRIN indexes for optimal query performance
+  </Card>
+  <Card title="Extensibility" icon="puzzle-piece">
+    Add functionality through extensions like PostGIS, pgvector, and more
+  </Card>
+</CardGroup>
+
+## Working with Your Database
+
+Supabase provides multiple ways to interact with your PostgreSQL database:
+
+### Dashboard Interface
+
+The Supabase Dashboard provides a user-friendly interface for database management:
+
+- **Table Editor**: Create and manage tables visually, similar to a spreadsheet
+- **SQL Editor**: Write and execute custom SQL queries with syntax highlighting
+- **Schema Visualizer**: View relationships between tables
+- **Database Advisors**: Get recommendations for performance improvements
+
+### SQL Editor
+
+Execute custom SQL queries directly in the Dashboard:
+
+```sql
+-- Create a new table
+create table products (
+  id bigint generated always as identity primary key,
+  name text not null,
+  price numeric(10,2),
+  created_at timestamptz default now()
+);
+
+-- Query data
+select * from products where price > 100;
+```
+
+### Supabase CLI
+
+Manage your database schema through migrations:
+
+```bash
+# Create a new migration
+supabase migration new create_products_table
+
+# Apply migrations
+supabase db push
+
+# Reset database to a clean state
+supabase db reset
+```
+
+### Direct Connection
+
+Connect using any PostgreSQL client:
+
+```bash
+psql postgresql://postgres:[PASSWORD]@db.[PROJECT_REF].supabase.co:5432/postgres
+```
+
+## Database Features
+
+### Real-time Subscriptions
+
+Supabase extends Postgres with real-time functionality. Subscribe to database changes:
+
+```javascript
+const channel = supabase
+  .channel('products-changes')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'products' },
+    (payload) => console.log('Change received!', payload)
+  )
+  .subscribe()
+```
+
+### Row Level Security (RLS)
+
+Control access to your data at the row level:
+
+```sql
+-- Enable RLS
+alter table products enable row level security;
+
+-- Create a policy
+create policy "Users can view their own products"
+  on products for select
+  using (auth.uid() = user_id);
+```
+
+### Automatic API Generation
+
+Supabase automatically generates a RESTful API from your database schema:
+
+```javascript
+// Insert data
+const { data, error } = await supabase
+  .from('products')
+  .insert({ name: 'Widget', price: 29.99 })
+
+// Query data
+const { data, error } = await supabase
+  .from('products')
+  .select('*')
+  .gte('price', 20)
+  .order('created_at', { ascending: false })
+```
+
+## Database Organization
+
+### Schemas
+
+Schemas help organize your database objects:
+
+```sql
+-- Create a schema for internal data
+create schema private;
+
+-- Create a table in the private schema
+create table private.analytics (
+  id bigint generated always as identity primary key,
+  event_name text,
+  created_at timestamptz default now()
+);
+```
+
+### Common Schemas in Supabase
+
+- `public`: Default schema for your application tables
+- `auth`: Supabase authentication system tables
+- `storage`: File storage metadata
+- `realtime`: Real-time subscriptions configuration
+- `extensions`: PostgreSQL extensions
+
+## Performance & Scaling
+
+### Connection Pooling
+
+Supabase uses PgBouncer for connection pooling:
+
+```bash
+# Transaction mode (recommended for serverless)
+postgresql://postgres:[PASSWORD]@db.[PROJECT_REF].supabase.co:6543/postgres
+
+# Session mode (for long-lived connections)
+postgresql://postgres:[PASSWORD]@db.[PROJECT_REF].supabase.co:5432/postgres
+```
+
+### Indexes
+
+Create indexes to improve query performance:
+
+```sql
+-- Create an index on frequently queried columns
+create index idx_products_name on products(name);
+
+-- Create a partial index
+create index idx_active_products on products(created_at)
+  where deleted_at is null;
+```
+
+### Materialized Views
+
+Cache complex query results:
+
+```sql
+create materialized view product_stats as
+  select
+    category,
+    count(*) as product_count,
+    avg(price) as avg_price
+  from products
+  group by category;
+
+-- Refresh the view
+refresh materialized view product_stats;
+```
+
+## Backups & Recovery
+
+Supabase automatically manages database backups:
+
+- **Daily backups** are available on all projects
+- **Point-in-time recovery (PITR)** available on Pro plan and above
+- Backups do not include Storage objects (only metadata)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tables" icon="table" href="/database/tables">
+    Learn how to create and manage database tables
+  </Card>
+  <Card title="Functions" icon="function" href="/database/functions">
+    Write custom database functions in SQL and PL/pgSQL
+  </Card>
+  <Card title="Triggers" icon="bolt" href="/database/triggers">
+    Automatically execute code on table events
+  </Card>
+  <Card title="Extensions" icon="puzzle-piece" href="/database/extensions">
+    Extend PostgreSQL with powerful extensions
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
+- [Supabase Database Guides](/guides/database)
+- [SQL Editor in Dashboard](/dashboard/project/_/sql)

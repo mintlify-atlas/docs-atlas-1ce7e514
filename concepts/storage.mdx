@@ -1,0 +1,453 @@
+---
+title: 'Storage'
+description: 'Learn about Supabase Storage - a scalable object storage system for managing files with fine-grained access controls and optimized delivery.'
+---
+
+Supabase Storage is a robust, scalable solution for managing files of any size. Built on industry-standard S3 protocol, it provides specialized bucket types for different use cases with fine-grained access controls and global CDN delivery.
+
+## Architecture
+
+Supabase Storage consists of several components:
+
+- **Storage API**: RESTful API for file operations (built with Node.js)
+- **PostgreSQL**: Stores file metadata and access policies
+- **S3-compatible backend**: Actual file storage (supports AWS S3, Cloudflare R2, etc.)
+- **Global CDN**: Delivers files with low latency from 285+ cities worldwide
+- **Image Transformation**: On-the-fly image processing and optimization
+
+<Tip>
+Storage integrates with PostgreSQL Row Level Security, allowing you to use the same authorization logic as your database.
+</Tip>
+
+## Bucket Types
+
+Supabase Storage offers three specialized bucket types:
+
+### Files Buckets
+
+Traditional object storage for images, videos, documents, and general-purpose content.
+
+**Use cases**: User avatars, media libraries, document storage, file uploads
+
+**Features**:
+- Global CDN delivery
+- Image optimization and transformation
+- Row-level security integration
+- Resumable uploads (TUS protocol)
+- S3-compatible API
+
+### Vector Buckets
+
+Specialized storage for vector embeddings with similarity search capabilities.
+
+**Use cases**: AI-powered search, semantic similarity, RAG systems, embedding storage
+
+**Features**:
+- Optimized vector indexing (HNSW, Flat)
+- Multiple distance metrics (cosine, euclidean, L2)
+- Metadata filtering
+- Direct SQL queries via foreign tables
+
+### Analytics Buckets
+
+Purpose-built for large-scale analytical workloads using Apache Iceberg.
+
+**Use cases**: Data lakes, analytics pipelines, time-series data, log storage
+
+**Features**:
+- Apache Iceberg table format
+- SQL-accessible via Postgres
+- Partitioned data organization
+- Cost-effective historical data storage
+
+## Working with Files
+
+### Creating Buckets
+
+Create a bucket via the Dashboard or programmatically:
+
+```typescript
+// Create a private bucket
+const { data, error } = await supabase.storage.createBucket('avatars', {
+  public: false,
+  fileSizeLimit: 1024 * 1024 * 2, // 2MB
+  allowedMimeTypes: ['image/png', 'image/jpeg']
+})
+
+// Create a public bucket
+const { data, error } = await supabase.storage.createBucket('public-assets', {
+  public: true
+})
+```
+
+Or using SQL:
+
+```sql
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', false);
+```
+
+### Uploading Files
+
+```typescript
+// Upload a file
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .upload('user/avatar.png', file, {
+    cacheControl: '3600',
+    upsert: false
+  })
+
+// Upload with progress tracking
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .upload('user/avatar.png', file, {
+    onUploadProgress: (progress) => {
+      console.log(`Upload progress: ${(progress.loaded / progress.total) * 100}%`)
+    }
+  })
+```
+
+### Resumable Uploads
+
+For large files, use resumable uploads (TUS protocol):
+
+```typescript
+import { Upload } from '@supabase/storage-js'
+
+const upload = new Upload(file, {
+  endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
+  retryDelays: [0, 1000, 3000, 5000],
+  headers: {
+    authorization: `Bearer ${session.access_token}`
+  },
+  uploadUrl: undefined,
+  metadata: {
+    bucketName: 'videos',
+    objectName: 'large-video.mp4',
+    contentType: 'video/mp4'
+  },
+  onError: (error) => console.error('Upload failed:', error),
+  onProgress: (bytesUploaded, bytesTotal) => {
+    console.log(`${(bytesUploaded / bytesTotal * 100).toFixed(2)}%`)
+  },
+  onSuccess: () => console.log('Upload complete!')
+})
+
+upload.start()
+
+// Pause and resume
+upload.abort()
+upload.start() // Resumes from where it left off
+```
+
+### Downloading Files
+
+```typescript
+// Download a file
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .download('user/avatar.png')
+
+// Get public URL (for public buckets)
+const { data } = supabase.storage
+  .from('public-assets')
+  .getPublicUrl('images/logo.png')
+
+console.log(data.publicUrl)
+
+// Create signed URL (for private buckets)
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .createSignedUrl('user/avatar.png', 60) // Expires in 60 seconds
+
+console.log(data.signedUrl)
+```
+
+### Listing Files
+
+```typescript
+// List all files in a bucket
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .list('user', {
+    limit: 100,
+    offset: 0,
+    sortBy: { column: 'name', order: 'asc' }
+  })
+
+// Search for files
+const { data, error } = await supabase.storage
+  .from('documents')
+  .list('folder', {
+    search: 'report'
+  })
+```
+
+### Deleting Files
+
+```typescript
+// Delete a single file
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .remove(['user/avatar.png'])
+
+// Delete multiple files
+const { data, error } = await supabase.storage
+  .from('avatars')
+  .remove(['user/avatar1.png', 'user/avatar2.png'])
+
+// Empty a bucket
+const { data: files } = await supabase.storage.from('temp').list()
+const filesToRemove = files.map(x => x.name)
+const { data, error } = await supabase.storage.from('temp').remove(filesToRemove)
+```
+
+## Image Transformation
+
+Transform images on-the-fly using URL parameters:
+
+```typescript
+const { data } = supabase.storage
+  .from('avatars')
+  .getPublicUrl('user/avatar.png', {
+    transform: {
+      width: 200,
+      height: 200,
+      resize: 'cover',
+      quality: 80,
+      format: 'webp'
+    }
+  })
+```
+
+Available transformations:
+
+- **width**: Resize width
+- **height**: Resize height
+- **resize**: Resize mode (`cover`, `contain`, `fill`)
+- **quality**: Image quality (1-100)
+- **format**: Output format (`webp`, `jpeg`, `png`, `avif`)
+- **blur**: Apply Gaussian blur (1-100)
+- **sharpen**: Sharpen image (1-100)
+
+## Access Control
+
+### Public vs Private Buckets
+
+```typescript
+// Public bucket - anyone can read files
+const { data } = supabase.storage
+  .from('public-assets')
+  .getPublicUrl('logo.png')
+
+// Private bucket - requires authentication
+const { data, error } = await supabase.storage
+  .from('private-files')
+  .createSignedUrl('document.pdf', 3600)
+```
+
+### Storage Policies
+
+Use Row Level Security to control file access:
+
+```sql
+-- Allow authenticated users to upload their own files
+create policy "Users can upload own files"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'avatars' and
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Allow users to read their own files
+create policy "Users can read own files"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'avatars' and
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Allow users to update their own files
+create policy "Users can update own files"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'avatars' and
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Allow users to delete their own files
+create policy "Users can delete own files"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'avatars' and
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+```
+
+### Policy Helper Functions
+
+```sql
+-- Check file extension
+storage.extension(name) = 'png'
+
+-- Get file size
+storage.filesize('bucket-name', 'file-path')
+
+-- Get folder path
+storage.foldername(name)
+
+-- Get filename
+storage.filename(name)
+```
+
+## S3 Compatibility
+
+Access Storage using S3-compatible tools:
+
+```bash
+# Configure AWS CLI
+aws configure set aws_access_key_id <anon-key>
+aws configure set aws_secret_access_key <service-role-key>
+aws configure set region us-east-1
+
+# List buckets
+aws s3 ls --endpoint-url https://<project-ref>.supabase.co/storage/v1/s3
+
+# Upload file
+aws s3 cp file.txt s3://bucket-name/ \
+  --endpoint-url https://<project-ref>.supabase.co/storage/v1/s3
+```
+
+Or use S3 SDKs:
+
+```typescript
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+
+const s3Client = new S3Client({
+  region: 'us-east-1',
+  endpoint: `https://${projectRef}.supabase.co/storage/v1/s3`,
+  credentials: {
+    accessKeyId: anonKey,
+    secretAccessKey: serviceRoleKey
+  }
+})
+
+const command = new PutObjectCommand({
+  Bucket: 'avatars',
+  Key: 'user/avatar.png',
+  Body: fileBuffer
+})
+
+await s3Client.send(command)
+```
+
+## File Organization
+
+### Folder Structure
+
+```typescript
+// Organize files by user ID
+const filePath = `${user.id}/avatar.png`
+
+// Organize by date
+const date = new Date().toISOString().split('T')[0]
+const filePath = `uploads/${date}/${file.name}`
+
+// Organize by category
+const filePath = `${category}/${subcategory}/${file.name}`
+```
+
+### Naming Conventions
+
+```typescript
+// Generate unique filenames
+import { v4 as uuidv4 } from 'uuid'
+
+const fileExt = file.name.split('.').pop()
+const fileName = `${uuidv4()}.${fileExt}`
+
+// Sanitize filenames
+const sanitizedName = file.name
+  .toLowerCase()
+  .replace(/[^a-z0-9.-]/g, '-')
+```
+
+## Performance Optimization
+
+### CDN Caching
+
+```typescript
+// Set cache control headers
+const { data, error } = await supabase.storage
+  .from('public-assets')
+  .upload('logo.png', file, {
+    cacheControl: '31536000', // 1 year
+    upsert: true
+  })
+```
+
+### Lazy Loading Images
+
+```jsx
+<img
+  src={lowQualityUrl}
+  data-src={highQualityUrl}
+  loading="lazy"
+  alt="Description"
+/>
+```
+
+### Progressive Image Loading
+
+```typescript
+// Generate thumbnail
+const thumbnailUrl = supabase.storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: { width: 50, height: 50, quality: 50 }
+  })
+
+// Generate full size
+const fullUrl = supabase.storage
+  .from('images')
+  .getPublicUrl('photo.jpg')
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use RLS" icon="shield">
+    Always protect buckets with Row Level Security policies.
+  </Card>
+  <Card title="Optimize Images" icon="image">
+    Use image transformations to serve optimized formats and sizes.
+  </Card>
+  <Card title="Set Size Limits" icon="ruler">
+    Configure appropriate file size limits for your buckets.
+  </Card>
+  <Card title="Organize Files" icon="folder">
+    Use consistent folder structures and naming conventions.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Image Transformations" href="/guides/storage/image-transformations" icon="wand-magic-sparkles">
+    Learn about on-the-fly image processing
+  </Card>
+  <Card title="Access Control" href="/guides/storage/security/access-control" icon="lock">
+    Secure your files with RLS policies
+  </Card>
+  <Card title="CDN & Caching" href="/guides/storage/cdn" icon="bolt">
+    Optimize file delivery with CDN
+  </Card>
+  <Card title="S3 Compatibility" href="/guides/storage/s3" icon="database">
+    Use S3-compatible tools and SDKs
+  </Card>
+</CardGroup>

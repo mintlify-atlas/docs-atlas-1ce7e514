@@ -1,0 +1,325 @@
+---
+title: 'REST API Overview'
+description: 'Introduction to the Supabase REST API powered by PostgREST'
+icon: 'globe'
+---
+
+## Introduction
+
+Supabase provides a RESTful API that is automatically generated from your PostgreSQL database schema. The API is powered by [PostgREST](https://postgrest.org), which provides instant RESTful APIs for your database.
+
+## Base URL
+
+Your API is available at:
+
+```
+https://<PROJECT_REF>.supabase.co/rest/v1/
+```
+
+Replace `<PROJECT_REF>` with your project reference ID found in your project settings.
+
+## Auto-Generated API
+
+Every time you create or modify a table, view, or function in your database, the REST API is automatically updated to reflect those changes. No additional configuration is required.
+
+### Example
+
+If you create a table named `countries` with the following schema:
+
+```sql
+CREATE TABLE countries (
+  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL,
+  capital TEXT
+);
+```
+
+The following endpoints are automatically available:
+
+- `GET /rest/v1/countries` - List all countries
+- `POST /rest/v1/countries` - Create a new country
+- `PATCH /rest/v1/countries?id=eq.1` - Update a country
+- `DELETE /rest/v1/countries?id=eq.1` - Delete a country
+
+## API Documentation
+
+You can view the auto-generated API documentation for your project at:
+
+```
+https://<PROJECT_REF>.supabase.co/rest/v1/
+```
+
+This provides an interactive OpenAPI/Swagger documentation interface.
+
+## Common Headers
+
+All API requests require specific headers:
+
+<ParamField header="apikey" type="string" required>
+  Your Supabase API key (anon key for client requests, service role key for server requests).
+</ParamField>
+
+<ParamField header="Authorization" type="string">
+  Bearer token for authenticated requests: `Bearer <JWT_TOKEN>`
+</ParamField>
+
+<ParamField header="Content-Type" type="string">
+  Set to `application/json` for POST/PATCH requests.
+</ParamField>
+
+<ParamField header="Prefer" type="string">
+  Control the response format:
+  - `return=representation` - Return the full object after insert/update
+  - `return=minimal` - Return no content (204 response)
+  - `return=headers-only` - Return only headers
+</ParamField>
+
+### Example Request
+
+```bash
+curl 'https://<PROJECT_REF>.supabase.co/rest/v1/countries' \
+  -H "apikey: YOUR_ANON_KEY" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+## Response Format
+
+### Success Responses
+
+Successful responses return JSON data:
+
+```json
+[
+  {
+    "id": 1,
+    "name": "United States",
+    "code": "US",
+    "capital": "Washington, D.C."
+  },
+  {
+    "id": 2,
+    "name": "Canada",
+    "code": "CA",
+    "capital": "Ottawa"
+  }
+]
+```
+
+### Error Responses
+
+Error responses include a message and details:
+
+```json
+{
+  "code": "PGRST116",
+  "details": null,
+  "hint": null,
+  "message": "JWT expired"
+}
+```
+
+<ResponseField name="code" type="string">
+  PostgREST error code.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message.
+</ResponseField>
+
+<ResponseField name="details" type="string | null">
+  Additional error details if available.
+</ResponseField>
+
+<ResponseField name="hint" type="string | null">
+  Suggested fix for the error.
+</ResponseField>
+
+## HTTP Status Codes
+
+| Status Code | Description |
+|------------|-------------|
+| `200` | Successful GET request |
+| `201` | Successful POST request (created) |
+| `204` | Successful DELETE or update with no content |
+| `400` | Bad request (invalid parameters) |
+| `401` | Unauthorized (missing or invalid API key) |
+| `403` | Forbidden (insufficient permissions) |
+| `404` | Not found (table or resource doesn't exist) |
+| `406` | Not acceptable (invalid Accept header) |
+| `409` | Conflict (unique constraint violation) |
+| `416` | Range not satisfiable (invalid pagination) |
+| `500` | Internal server error |
+
+## Filtering and Querying
+
+The REST API supports powerful filtering using query parameters:
+
+### Basic Filters
+
+```bash
+# Equal to
+GET /countries?name=eq.Albania
+
+# Not equal to
+GET /countries?name=neq.Albania
+
+# Greater than
+GET /countries?population=gt.1000000
+
+# Less than
+GET /countries?population=lt.1000000
+
+# Like (case-sensitive)
+GET /countries?name=like.*Alba*
+
+# ilike (case-insensitive)
+GET /countries?name=ilike.*alba*
+
+# In list
+GET /countries?name=in.(Albania,Algeria)
+
+# Is null
+GET /countries?capital=is.null
+```
+
+### Combining Filters
+
+Multiple filters are combined with AND logic:
+
+```bash
+GET /countries?name=like.*A*&population=gt.1000000
+```
+
+### Ordering
+
+```bash
+# Ascending order
+GET /countries?order=name.asc
+
+# Descending order
+GET /countries?order=population.desc
+
+# Multiple columns
+GET /countries?order=name.asc,population.desc
+```
+
+### Pagination
+
+```bash
+# Limit results
+GET /countries?limit=10
+
+# Offset results
+GET /countries?limit=10&offset=20
+
+# Range (preferred method)
+GET /countries
+Range: 0-9
+```
+
+### Selecting Columns
+
+```bash
+# Select specific columns
+GET /countries?select=name,capital
+
+# Select all columns
+GET /countries?select=*
+
+# Select with relationships
+GET /countries?select=name,cities(name,population)
+```
+
+## Vertical Filtering (Relationships)
+
+Query related data using foreign keys:
+
+```bash
+# Get countries with their cities
+GET /countries?select=name,cities(*)
+
+# Filter nested resources
+GET /countries?select=name,cities(name,population)&cities.population=gt.1000000
+```
+
+## Stored Procedures
+
+Call PostgreSQL functions via the API:
+
+```bash
+POST /rpc/function_name
+Content-Type: application/json
+
+{
+  "param1": "value1",
+  "param2": "value2"
+}
+```
+
+## Performance Tips
+
+<AccordionGroup>
+  <Accordion title="Use select to limit columns">
+    Only request the columns you need to reduce payload size:
+    
+    ```bash
+    GET /countries?select=id,name
+    ```
+  </Accordion>
+  
+  <Accordion title="Use indexes for filtered columns">
+    Create database indexes on columns you frequently filter by:
+    
+    ```sql
+    CREATE INDEX idx_countries_name ON countries(name);
+    ```
+  </Accordion>
+  
+  <Accordion title="Implement pagination">
+    Always use pagination for large datasets:
+    
+    ```bash
+    GET /countries?limit=100&offset=0
+    ```
+  </Accordion>
+  
+  <Accordion title="Use count=exact sparingly">
+    Only request total counts when necessary as it can be expensive:
+    
+    ```bash
+    GET /countries?select=*&limit=10
+    Prefer: count=exact
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Rate Limits
+
+API rate limits vary by plan:
+
+- **Free tier**: Unlimited requests (with CPU limits)
+- **Pro tier**: Unlimited requests (higher CPU limits)
+- **Enterprise**: Custom limits
+
+See [Rate Limits](/docs/guides/platform/rate-limits) for more information.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/api/rest/authentication">
+    Learn how to authenticate API requests
+  </Card>
+  
+  <Card title="Database Operations" icon="database" href="/api/rest/database">
+    Explore CRUD operations
+  </Card>
+  
+  <Card title="Storage API" icon="folder" href="/api/rest/storage">
+    Work with file storage
+  </Card>
+  
+  <Card title="Edge Functions" icon="bolt" href="/api/rest/edge-functions">
+    Call serverless functions
+  </Card>
+</CardGroup>

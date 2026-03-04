@@ -1,0 +1,317 @@
+---
+title: 'Sign Up Users'
+description: 'Register new users with email, phone, or anonymous authentication'
+---
+
+Supabase provides multiple ways to register new users. This guide covers email/password signup, email confirmation, and user metadata.
+
+## Email and Password Sign Up
+
+The most common authentication method is email and password:
+
+<CodeGroup>
+
+```javascript JavaScript
+const { data, error } = await supabase.auth.signUp({
+  email: 'example@email.com',
+  password: 'example-password',
+})
+
+if (error) {
+  console.error('Error signing up:', error.message)
+} else {
+  console.log('User created:', data.user)
+}
+```
+
+```typescript Next.js Server Action
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+
+export async function signUp(formData: FormData) {
+  const supabase = await createClient()
+
+  const data = {
+    email: formData.get('email') as string,
+    password: formData.get('password') as string,
+  }
+
+  const { error } = await supabase.auth.signUp(data)
+
+  if (error) {
+    redirect('/error')
+  }
+
+  revalidatePath('/', 'layout')
+  redirect('/')
+}
+```
+
+```dart Flutter
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+final supabase = Supabase.instance.client;
+
+try {
+  final AuthResponse res = await supabase.auth.signUp(
+    email: 'example@email.com',
+    password: 'example-password',
+  );
+  final Session? session = res.session;
+  final User? user = res.user;
+} on AuthException catch (error) {
+  print('Error signing up: ${error.message}');
+}
+```
+
+```python Python
+from supabase import create_client
+
+supabase = create_client(supabase_url, supabase_key)
+
+try:
+    data = supabase.auth.sign_up({
+        "email": "example@email.com",
+        "password": "example-password"
+    })
+    print(f"User created: {data.user}")
+except Exception as error:
+    print(f"Error: {error}")
+```
+
+</CodeGroup>
+
+## With User Metadata
+
+Store additional user information during signup:
+
+```javascript
+const { data, error } = await supabase.auth.signUp({
+  email: 'example@email.com',
+  password: 'example-password',
+  options: {
+    data: {
+      first_name: 'John',
+      last_name: 'Doe',
+      age: 27,
+      avatar_url: 'https://example.com/avatar.jpg'
+    }
+  }
+})
+
+// Access metadata
+const user = data.user
+console.log(user.user_metadata.first_name) // 'John'
+```
+
+<Note>
+  User metadata is stored in the `raw_user_meta_data` column and is accessible in the JWT token. Don't store sensitive information here.
+</Note>
+
+## Email Confirmation
+
+By default, Supabase requires email confirmation. Users receive a confirmation email with a link:
+
+### Enable/Disable Email Confirmation
+
+1. Go to Authentication > Settings in your Supabase dashboard
+2. Toggle "Enable email confirmations"
+
+### Handle Confirmation Callback
+
+```typescript app/auth/confirm/route.ts
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url)
+  const token_hash = requestUrl.searchParams.get('token_hash')
+  const type = requestUrl.searchParams.get('type')
+  const next = requestUrl.searchParams.get('next') ?? '/'
+
+  if (token_hash && type) {
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          },
+        },
+      }
+    )
+
+    const { error } = await supabase.auth.verifyOtp({
+      type,
+      token_hash,
+    })
+
+    if (!error) {
+      return NextResponse.redirect(new URL(next, request.url))
+    }
+  }
+
+  // Return to an error page
+  return NextResponse.redirect(new URL('/error', request.url))
+}
+```
+
+## Phone Sign Up
+
+Register users with their phone number:
+
+```javascript
+const { data, error } = await supabase.auth.signUp({
+  phone: '+13334445555',
+  password: 'example-password',
+})
+```
+
+<Warning>
+  Phone authentication requires setting up an SMS provider in your Supabase dashboard under Authentication > Settings > Phone Auth.
+</Warning>
+
+## Anonymous Sign Up
+
+Allow users to explore your app without registration:
+
+```javascript
+const { data, error } = await supabase.auth.signInAnonymously()
+
+// Later, convert to permanent account
+const { data: userData, error: updateError } = await supabase.auth.updateUser({
+  email: 'user@example.com',
+  password: 'new-password'
+})
+```
+
+## Email Redirects
+
+Customize where users are redirected after email confirmation:
+
+```javascript
+const { data, error } = await supabase.auth.signUp({
+  email: 'example@email.com',
+  password: 'example-password',
+  options: {
+    emailRedirectTo: 'https://example.com/welcome',
+  }
+})
+```
+
+## Complete Sign-Up Form Example
+
+```jsx React Component
+import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+
+export default function SignUpForm() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
+  
+  const supabase = createClient()
+
+  const handleSignUp = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setMessage('')
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          first_name: firstName,
+        },
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      }
+    })
+
+    if (error) {
+      setMessage(error.message)
+    } else {
+      setMessage('Check your email to confirm your account!')
+    }
+    
+    setLoading(false)
+  }
+
+  return (
+    <form onSubmit={handleSignUp}>
+      <input
+        type="text"
+        placeholder="First Name"
+        value={firstName}
+        onChange={(e) => setFirstName(e.target.value)}
+        required
+      />
+      <input
+        type="email"
+        placeholder="Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        required
+      />
+      <input
+        type="password"
+        placeholder="Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        required
+        minLength={6}
+      />
+      <button type="submit" disabled={loading}>
+        {loading ? 'Signing up...' : 'Sign Up'}
+      </button>
+      {message && <p>{message}</p>}
+    </form>
+  )
+}
+```
+
+## Password Requirements
+
+Enforce strong passwords in your Supabase dashboard:
+
+- Minimum length (default: 6 characters)
+- Require uppercase letters
+- Require lowercase letters
+- Require numbers
+- Require special characters
+
+## Error Handling
+
+Common signup errors:
+
+| Error Code | Description | Solution |
+|------------|-------------|----------|
+| `user_already_exists` | Email is already registered | Direct user to sign in |
+| `invalid_email` | Email format is invalid | Validate email on client |
+| `weak_password` | Password doesn't meet requirements | Show password requirements |
+| `email_provider_disabled` | Email auth is disabled | Enable in dashboard |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Sign In Users" icon="right-to-bracket" href="/auth/sign-in">
+    Learn how to authenticate existing users
+  </Card>
+  
+  <Card title="OAuth Providers" icon="share-nodes" href="/auth/oauth">
+    Add social login to your app
+  </Card>
+</CardGroup>

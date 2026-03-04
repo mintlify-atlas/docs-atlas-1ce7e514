@@ -1,0 +1,546 @@
+---
+title: 'Download Files'
+description: 'Retrieve and serve files from Supabase Storage'
+---
+
+Supabase Storage provides multiple methods to download and access files, whether they're public or private.
+
+## Download Methods
+
+### Download as Blob
+
+Download files as Blob objects for client-side processing:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .download('public/avatar1.png')
+
+if (error) {
+  console.error('Download error:', error.message)
+} else {
+  // data is a Blob
+  console.log('File size:', data.size)
+  console.log('MIME type:', data.type)
+  
+  // Create object URL for display
+  const url = URL.createObjectURL(data)
+  document.getElementById('image').src = url
+}
+```
+
+### Public URLs
+
+For public buckets, get direct URLs:
+
+```javascript
+const { data } = supabase
+  .storage
+  .from('avatars')
+  .getPublicUrl('public/avatar1.png')
+
+console.log('Public URL:', data.publicUrl)
+
+// Use in HTML
+// <img src="{data.publicUrl}" alt="Avatar" />
+```
+
+### Signed URLs
+
+Generate temporary URLs for private files:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('private-docs')
+  .createSignedUrl('document.pdf', 60) // Expires in 60 seconds
+
+if (error) {
+  console.error('Error creating signed URL:', error.message)
+} else {
+  console.log('Signed URL:', data.signedUrl)
+  console.log('Expires at:', new Date(data.expiresAt))
+}
+```
+
+## Download Component
+
+Complete React component for downloading files:
+
+```jsx React Component
+import { useState } from 'react'
+import { supabase } from './supabaseClient'
+
+export default function FileDownload({ fileName, bucketName }) {
+  const [downloading, setDownloading] = useState(false)
+
+  const downloadFile = async () => {
+    setDownloading(true)
+
+    try {
+      const { data, error } = await supabase
+        .storage
+        .from(bucketName)
+        .download(fileName)
+
+      if (error) throw error
+
+      // Create blob URL
+      const url = URL.createObjectURL(data)
+
+      // Create temporary link and trigger download
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      // Clean up
+      URL.revokeObjectURL(url)
+      
+    } catch (error) {
+      console.error('Download failed:', error)
+      alert('Failed to download file')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  return (
+    <button onClick={downloadFile} disabled={downloading}>
+      {downloading ? 'Downloading...' : 'Download File'}
+    </button>
+  )
+}
+```
+
+## Image Display
+
+Display images from Storage:
+
+```jsx Image Component
+import { useState, useEffect } from 'react'
+import { supabase } from './supabaseClient'
+
+export default function StorageImage({ path, bucketName = 'avatars' }) {
+  const [imageUrl, setImageUrl] = useState(null)
+
+  useEffect(() => {
+    async function getImage() {
+      // For public buckets
+      const { data } = supabase
+        .storage
+        .from(bucketName)
+        .getPublicUrl(path)
+      
+      setImageUrl(data.publicUrl)
+    }
+
+    if (path) {
+      getImage()
+    }
+  }, [path, bucketName])
+
+  if (!imageUrl) {
+    return <div>Loading...</div>
+  }
+
+  return (
+    <img
+      src={imageUrl}
+      alt="Storage image"
+      style={{ maxWidth: '100%' }}
+    />
+  )
+}
+```
+
+### Private Image Display
+
+For private buckets, use signed URLs:
+
+```jsx Private Image Component
+import { useState, useEffect } from 'react'
+import { supabase } from './supabaseClient'
+
+export default function PrivateImage({ path, bucketName = 'private' }) {
+  const [imageUrl, setImageUrl] = useState(null)
+
+  useEffect(() => {
+    async function getSignedUrl() {
+      const { data, error } = await supabase
+        .storage
+        .from(bucketName)
+        .createSignedUrl(path, 3600) // 1 hour expiry
+
+      if (error) {
+        console.error('Error getting signed URL:', error)
+        return
+      }
+
+      setImageUrl(data.signedUrl)
+    }
+
+    if (path) {
+      getSignedUrl()
+    }
+  }, [path, bucketName])
+
+  if (!imageUrl) {
+    return <div>Loading...</div>
+  }
+
+  return <img src={imageUrl} alt="Private image" />
+}
+```
+
+## List Files
+
+Retrieve list of files in a bucket:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('documents')
+  .list('user-123', {
+    limit: 100,
+    offset: 0,
+    sortBy: { column: 'name', order: 'asc' },
+  })
+
+if (error) {
+  console.error('Error listing files:', error)
+} else {
+  data.forEach(file => {
+    console.log('Name:', file.name)
+    console.log('Size:', file.metadata.size)
+    console.log('Updated:', file.updated_at)
+  })
+}
+```
+
+### File Browser Component
+
+```jsx File Browser
+import { useState, useEffect } from 'react'
+import { supabase } from './supabaseClient'
+
+export default function FileBrowser({ bucketName, folder = '' }) {
+  const [files, setFiles] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadFiles()
+  }, [bucketName, folder])
+
+  async function loadFiles() {
+    setLoading(true)
+    
+    const { data, error } = await supabase
+      .storage
+      .from(bucketName)
+      .list(folder, {
+        limit: 100,
+        offset: 0,
+        sortBy: { column: 'created_at', order: 'desc' },
+      })
+
+    if (error) {
+      console.error('Error loading files:', error)
+    } else {
+      setFiles(data)
+    }
+    
+    setLoading(false)
+  }
+
+  async function downloadFile(fileName) {
+    const filePath = folder ? `${folder}/${fileName}` : fileName
+    
+    const { data, error } = await supabase
+      .storage
+      .from(bucketName)
+      .download(filePath)
+
+    if (error) {
+      alert('Download failed: ' + error.message)
+      return
+    }
+
+    const url = URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  if (loading) {
+    return <div>Loading files...</div>
+  }
+
+  return (
+    <div>
+      <h2>Files in {bucketName}/{folder || 'root'}</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Size</th>
+            <th>Updated</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {files.map((file) => (
+            <tr key={file.name}>
+              <td>{file.name}</td>
+              <td>{(file.metadata?.size / 1024).toFixed(2)} KB</td>
+              <td>{new Date(file.updated_at).toLocaleDateString()}</td>
+              <td>
+                <button onClick={() => downloadFile(file.name)}>
+                  Download
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+```
+
+## Search Files
+
+Search for files with specific patterns:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('documents')
+  .list('reports', {
+    search: '2024',
+    limit: 50,
+    sortBy: { column: 'name', order: 'asc' },
+  })
+
+const pdf Files = data.filter(file => file.name.endsWith('.pdf'))
+console.log('PDF files:', pdfFiles)
+```
+
+## Download Multiple Files
+
+Download several files at once:
+
+```javascript
+async function downloadMultipleFiles(bucketName, filePaths) {
+  const downloadPromises = filePaths.map(async (path) => {
+    const { data, error } = await supabase
+      .storage
+      .from(bucketName)
+      .download(path)
+
+    if (error) {
+      console.error(`Error downloading ${path}:`, error)
+      return null
+    }
+
+    return { path, blob: data }
+  })
+
+  const results = await Promise.all(downloadPromises)
+  return results.filter(Boolean)
+}
+
+// Usage
+const files = await downloadMultipleFiles('documents', [
+  'file1.pdf',
+  'file2.pdf',
+  'file3.pdf'
+])
+
+console.log(`Downloaded ${files.length} files`)
+```
+
+## Stream Large Files
+
+For very large files, stream the download:
+
+```javascript
+async function streamDownload(bucketName, filePath) {
+  const { data } = supabase
+    .storage
+    .from(bucketName)
+    .getPublicUrl(filePath)
+
+  const response = await fetch(data.publicUrl)
+  const reader = response.body.getReader()
+  
+  let receivedLength = 0
+  const chunks = []
+
+  while(true) {
+    const { done, value } = await reader.read()
+    
+    if (done) break
+    
+    chunks.push(value)
+    receivedLength += value.length
+    
+    console.log(`Received ${receivedLength} bytes`)
+  }
+
+  const blob = new Blob(chunks)
+  return blob
+}
+```
+
+## Download as Data URL
+
+Convert downloaded file to base64 data URL:
+
+```javascript
+async function getFileAsDataUrl(bucketName, filePath) {
+  const { data, error } = await supabase
+    .storage
+    .from(bucketName)
+    .download(filePath)
+
+  if (error) throw error
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(data)
+  })
+}
+
+// Usage
+const dataUrl = await getFileAsDataUrl('avatars', 'avatar.png')
+console.log(dataUrl) // data:image/png;base64,...
+```
+
+## CDN Caching
+
+Public URLs are automatically cached by Supabase's CDN:
+
+```javascript
+// URLs are cached based on the path
+const { data } = supabase
+  .storage
+  .from('images')
+  .getPublicUrl('logo.png')
+
+// To bust cache, add a query parameter
+const urlWithCacheBust = `${data.publicUrl}?t=${Date.now()}`
+```
+
+## Download with Progress
+
+Track download progress:
+
+```javascript
+async function downloadWithProgress(bucketName, filePath, onProgress) {
+  const { data: publicUrlData } = supabase
+    .storage
+    .from(bucketName)
+    .getPublicUrl(filePath)
+
+  const response = await fetch(publicUrlData.publicUrl)
+  const contentLength = response.headers.get('content-length')
+  
+  const reader = response.body.getReader()
+  let receivedLength = 0
+  const chunks = []
+
+  while (true) {
+    const { done, value } = await reader.read()
+
+    if (done) break
+
+    chunks.push(value)
+    receivedLength += value.length
+
+    const progress = (receivedLength / contentLength) * 100
+    onProgress(progress)
+  }
+
+  return new Blob(chunks)
+}
+
+// Usage
+const blob = await downloadWithProgress(
+  'videos',
+  'large-video.mp4',
+  (progress) => console.log(`${progress.toFixed(2)}%`)
+)
+```
+
+## File Metadata
+
+Get file information without downloading:
+
+```javascript
+const { data, error } = await supabase
+  .storage
+  .from('documents')
+  .list('', {
+    limit: 1,
+    search: 'report.pdf'
+  })
+
+if (data && data.length > 0) {
+  const file = data[0]
+  console.log('Name:', file.name)
+  console.log('Size:', file.metadata.size)
+  console.log('MIME type:', file.metadata.mimetype)
+  console.log('Last modified:', file.metadata.lastModified)
+}
+```
+
+## Error Handling
+
+Common download errors:
+
+| Error | Description | Solution |
+|-------|-------------|----------|
+| `Object not found` | File doesn't exist | Verify file path |
+| `Bucket not found` | Bucket doesn't exist | Check bucket name |
+| `Unauthorized` | No access to private file | Check RLS policies or use signed URL |
+| `Resource not found` | Invalid path | Verify full path including folders |
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Public URLs" icon="link">
+    For public files, use getPublicUrl for better performance
+  </Card>
+  
+  <Card title="Cache Signed URLs" icon="clock">
+    Cache signed URLs client-side to reduce API calls
+  </Card>
+  
+  <Card title="Clean Up Object URLs" icon="broom">
+    Always revoke object URLs with URL.revokeObjectURL()
+  </Card>
+  
+  <Card title="Handle Large Files" icon="database">
+    Use streaming or progress tracking for large downloads
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Image Transformations" icon="wand-magic-sparkles" href="/storage/image-transformations">
+    Resize and optimize images on-the-fly
+  </Card>
+  
+  <Card title="Access Control" icon="shield" href="/storage/access-control">
+    Secure files with RLS policies
+  </Card>
+</CardGroup>

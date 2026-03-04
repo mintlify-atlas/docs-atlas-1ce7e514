@@ -1,0 +1,502 @@
+---
+title: 'Database Migrations'
+description: 'Manage your database schema with version-controlled migration files'
+---
+
+Database migrations are SQL statements that create, update, or delete database schemas. They provide a structured way to track and version your database changes over time, making it easy to share schema updates across your team and deploy to production.
+
+## Why Use Migrations?
+
+Migrations provide several key benefits:
+
+- **Version control**: Track database schema in Git alongside your code
+- **Reproducibility**: Recreate your database schema at any point in time
+- **Team collaboration**: Share schema changes easily across developers
+- **Safe deployments**: Apply tested changes to production systematically
+- **Rollback capability**: Revert changes if issues arise
+- **Environment parity**: Keep development, staging, and production in sync
+
+## Migration Workflow
+
+### Prerequisites
+
+Ensure you have:
+- [Supabase CLI installed](/platform/cli/installation)
+- A project initialized with `supabase init`
+- Local services running with `supabase start`
+
+### Creating Your First Migration
+
+Let's create a simple `employees` table to demonstrate the migration workflow.
+
+<Steps>
+  <Step title="Generate a migration file">
+    Create a new migration with a descriptive name:
+    
+    ```bash
+    supabase migration new create_employees_table
+    ```
+    
+    This creates a timestamped file in `supabase/migrations/`:
+    
+    ```
+    supabase/migrations/20240304120000_create_employees_table.sql
+    ```
+  </Step>
+  
+  <Step title="Add SQL to your migration">
+    Open the migration file and add your SQL:
+    
+    ```sql supabase/migrations/20240304120000_create_employees_table.sql
+    -- Create employees table
+    CREATE TABLE IF NOT EXISTS public.employees (
+      id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+      name TEXT NOT NULL,
+      email TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    -- Enable Row Level Security
+    ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
+    
+    -- Create policy for authenticated users
+    CREATE POLICY "Employees are viewable by authenticated users"
+      ON public.employees
+      FOR SELECT
+      TO authenticated
+      USING (true);
+    ```
+  </Step>
+  
+  <Step title="Apply the migration">
+    Run the migration against your local database:
+    
+    ```bash
+    supabase migration up
+    ```
+    
+    You can now view the `employees` table in Studio at `http://localhost:54323`.
+  </Step>
+</Steps>
+
+### Modifying Tables
+
+Now let's add a `department` column to demonstrate schema evolution:
+
+<Steps>
+  <Step title="Create a new migration">
+    ```bash
+    supabase migration new add_department_column
+    ```
+  </Step>
+  
+  <Step title="Add ALTER TABLE statement">
+    ```sql supabase/migrations/20240304130000_add_department_column.sql
+    ALTER TABLE IF EXISTS public.employees
+    ADD COLUMN department TEXT DEFAULT 'Engineering';
+    ```
+  </Step>
+  
+  <Step title="Apply the migration">
+    ```bash
+    supabase migration up
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+Migration files are applied in chronological order based on their timestamp prefix.
+</Tip>
+
+## Schema Diffing
+
+If you prefer using the Dashboard or SQL editor to make changes, you can generate migrations from schema differences.
+
+### Create Changes in Dashboard
+
+1. Open Studio at `http://localhost:54323`
+2. Create a new table called `cities` with columns:
+   - `id` (bigint, primary key, identity)
+   - `name` (text)
+   - `population` (bigint)
+
+### Generate Migration from Diff
+
+Generate a migration file from your changes:
+
+```bash
+supabase db diff -f create_cities_table
+```
+
+This creates a new migration file with the SQL needed to recreate your changes:
+
+```sql supabase/migrations/20240304140000_create_cities_table.sql
+CREATE TABLE "public"."cities" (
+  "id" BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  "name" TEXT,
+  "population" BIGINT
+);
+```
+
+### Test Your Migration
+
+Reset your database to test the migration:
+
+```bash
+supabase db reset
+```
+
+This will:
+1. Drop the database
+2. Reapply all migrations in order
+3. Run your seed file (if it exists)
+
+<Warning>
+`supabase db reset` destroys all local data. Always save important changes first:
+
+```bash
+supabase db dump --local --data-only > backup.sql
+```
+</Warning>
+
+## Migration Best Practices
+
+### 1. Keep Migrations Atomic
+
+Each migration should focus on a single logical change:
+
+<CodeGroup>
+```sql Good: Single purpose
+-- Migration: add_user_roles.sql
+CREATE TYPE user_role AS ENUM ('admin', 'member', 'guest');
+
+ALTER TABLE users ADD COLUMN role user_role DEFAULT 'member';
+```
+
+```sql Bad: Multiple unrelated changes
+-- Migration: mixed_changes.sql
+CREATE TABLE posts (...);
+ALTER TABLE users ADD COLUMN age INT;
+CREATE INDEX idx_comments_created ON comments(created_at);
+```
+</CodeGroup>
+
+### 2. Use Idempotent SQL
+
+Make migrations safe to run multiple times:
+
+```sql
+-- Use IF NOT EXISTS
+CREATE TABLE IF NOT EXISTS products (...);
+
+-- Check before altering
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'products' AND column_name = 'price') THEN
+    ALTER TABLE products ADD COLUMN price DECIMAL(10,2);
+  END IF;
+END $$;
+```
+
+### 3. Handle Lock Timeouts
+
+For large tables, set lock timeout to prevent blocking:
+
+```sql
+-- At the top of your migration
+SET lock_timeout = '2s';
+
+ALTER TABLE large_table ADD COLUMN new_col TEXT;
+```
+
+### 4. Always Enable RLS
+
+Enable Row Level Security on new tables:
+
+```sql
+CREATE TABLE sensitive_data (...);
+
+-- Never forget this!
+ALTER TABLE sensitive_data ENABLE ROW LEVEL SECURITY;
+```
+
+### 5. Use Descriptive Names
+
+Name migrations clearly:
+
+<CodeGroup>
+```bash Good
+supabase migration new add_email_verification_to_users
+supabase migration new create_posts_table
+supabase migration new add_index_on_posts_created_at
+```
+
+```bash Bad
+supabase migration new update
+supabase migration new fix
+supabase migration new changes
+```
+</CodeGroup>
+
+## Common Migration Patterns
+
+### Adding Indexes
+
+```sql
+-- Add index for better query performance
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_posts_user_id 
+  ON posts(user_id);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_posts_created_at 
+  ON posts(created_at DESC);
+```
+
+<Note>
+Use `CONCURRENTLY` to avoid locking the table during index creation.
+</Note>
+
+### Creating Triggers
+
+```sql
+-- Auto-update timestamp trigger
+CREATE OR REPLACE FUNCTION update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_posts_modtime
+  BEFORE UPDATE ON posts
+  FOR EACH ROW
+  EXECUTE FUNCTION update_modified_column();
+```
+
+### Adding Foreign Keys
+
+```sql
+-- Add foreign key with proper naming
+ALTER TABLE posts
+  ADD CONSTRAINT fk_posts_user_id
+  FOREIGN KEY (user_id)
+  REFERENCES auth.users(id)
+  ON DELETE CASCADE;
+```
+
+### Creating Functions
+
+```sql
+-- Create a helper function
+CREATE OR REPLACE FUNCTION get_user_posts(user_uuid UUID)
+RETURNS SETOF posts
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT * FROM posts WHERE user_id = user_uuid;
+$$;
+```
+
+### Renaming Columns Safely
+
+```sql
+-- Step 1: Add new column
+ALTER TABLE users ADD COLUMN full_name TEXT;
+
+-- Step 2: Copy data
+UPDATE users SET full_name = name;
+
+-- Step 3: Drop old column (in a separate migration after deployment)
+ALTER TABLE users DROP COLUMN name;
+```
+
+## Seeding Data
+
+Use `supabase/seed.sql` for development data:
+
+```sql supabase/seed.sql
+-- Insert test users
+INSERT INTO public.employees (name, email, department)
+VALUES
+  ('Alice Johnson', 'alice@example.com', 'Engineering'),
+  ('Bob Smith', 'bob@example.com', 'Marketing'),
+  ('Carol White', 'carol@example.com', 'Sales');
+
+-- Insert test cities
+INSERT INTO public.cities (name, population)
+VALUES
+  ('New York', 8336817),
+  ('Los Angeles', 3979576),
+  ('Chicago', 2693976);
+```
+
+Apply seed data:
+
+```bash
+supabase db reset  # Reapplies migrations and seed data
+```
+
+<Warning>
+Seed files are for development only. Don't use them for production data.
+</Warning>
+
+## Deploying Migrations
+
+### Link to Remote Project
+
+First, authenticate and link to your Supabase project:
+
+```bash
+# Login to Supabase
+supabase login
+
+# Link to your remote project
+supabase link
+```
+
+Select your project from the interactive prompt.
+
+### Push Migrations to Production
+
+Deploy your migrations:
+
+```bash
+supabase db push
+```
+
+This applies all pending migrations to your remote database.
+
+### Push with Seed Data (Optional)
+
+For staging environments, you can include seed data:
+
+```bash
+supabase db push --include-seed
+```
+
+<Warning>
+Never use `--include-seed` in production as it may overwrite real data.
+</Warning>
+
+## Migration Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| `supabase migration new <name>` | Create a new migration file |
+| `supabase migration up` | Apply pending migrations |
+| `supabase migration list` | List all migrations |
+| `supabase migration repair <version>` | Mark a migration as applied |
+| `supabase db diff` | Show schema differences |
+| `supabase db diff -f <name>` | Create migration from diff |
+| `supabase db reset` | Reset database and reapply migrations |
+| `supabase db push` | Push migrations to remote database |
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Migration fails with syntax error">
+    **Error**: `syntax error at or near...`
+    
+    **Solution**:
+    - Validate SQL syntax in a SQL editor
+    - Check for missing semicolons
+    - Ensure proper quoting of identifiers
+    - Test migration locally first: `supabase db reset`
+  </Accordion>
+  
+  <Accordion title="Table already exists">
+    **Error**: `relation "table_name" already exists`
+    
+    **Solution**:
+    - Use `CREATE TABLE IF NOT EXISTS`
+    - Check if migration was already applied
+    - Review migration history: `supabase migration list`
+  </Accordion>
+  
+  <Accordion title="Lock timeout exceeded">
+    **Error**: `canceling statement due to lock timeout`
+    
+    **Solution**:
+    - Increase lock timeout in migration:
+      ```sql
+      SET lock_timeout = '5s';
+      ```
+    - Run during low-traffic period
+    - Use `CONCURRENTLY` for index creation
+  </Accordion>
+  
+  <Accordion title="Permission denied">
+    **Error**: `permission denied for schema public`
+    
+    **Solution**:
+    - Ensure you're using the correct schema
+    - Check RLS policies aren't blocking operations
+    - Verify migration uses proper privileges
+  </Accordion>
+</AccordionGroup>
+
+## Advanced Topics
+
+### Multi-Stage Deployments
+
+For zero-downtime deployments of breaking changes:
+
+<Steps>
+  <Step title="Migration 1: Add new column">
+    ```sql
+    ALTER TABLE users ADD COLUMN email_new TEXT;
+    ```
+  </Step>
+  
+  <Step title="Deploy application update">
+    Update app to write to both columns
+  </Step>
+  
+  <Step title="Migration 2: Backfill data">
+    ```sql
+    UPDATE users SET email_new = email WHERE email_new IS NULL;
+    ```
+  </Step>
+  
+  <Step title="Migration 3: Switch over">
+    ```sql
+    ALTER TABLE users DROP COLUMN email;
+    ALTER TABLE users RENAME COLUMN email_new TO email;
+    ```
+  </Step>
+</Steps>
+
+### Managing Multiple Environments
+
+Use different projects for each environment:
+
+```bash
+# Link to staging
+supabase link --project-ref staging-ref
+supabase db push
+
+# Link to production
+supabase link --project-ref production-ref
+supabase db push
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy to Production" icon="rocket" href="./deployment">
+    Learn how to deploy your project to Supabase Platform
+  </Card>
+  
+  <Card title="Database Testing" icon="flask" href="/development/testing">
+    Set up automated testing for your database
+  </Card>
+  
+  <Card title="CI/CD Integration" icon="github" href="https://github.com/supabase/setup-cli">
+    Automate migrations with GitHub Actions
+  </Card>
+  
+  <Card title="CLI Reference" icon="book" href="/api-reference/cli">
+    Complete CLI command reference
+  </Card>
+</CardGroup>

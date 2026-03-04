@@ -1,0 +1,518 @@
+---
+title: 'Presence'
+description: 'Track online users and synchronize state with Realtime Presence'
+---
+
+## Overview
+
+Presence allows you to track which users are currently online and synchronize state across clients in real-time. It's perfect for showing "who's online" indicators, collaborative features, and multiplayer games.
+
+<Info>
+Presence automatically handles connection and disconnection events, removing users when they leave or lose connection.
+</Info>
+
+## Key Features
+
+- **Automatic cleanup**: Users are automatically removed when they disconnect
+- **Conflict resolution**: Built-in CRDT ensures consistent state across clients
+- **Scalable**: Efficiently handles thousands of concurrent users
+- **Flexible state**: Track any JSON-serializable user data
+
+## Basic Usage
+
+### Track Your Presence
+
+Add yourself to a channel's presence:
+
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://your-project.supabase.co',
+  'your-anon-key'
+)
+
+const channel = supabase.channel('online-users', {
+  config: {
+    presence: {
+      key: 'user-123' // Unique identifier for this user
+    }
+  }
+})
+
+channel.subscribe(async (status) => {
+  if (status === 'SUBSCRIBED') {
+    // Track your presence
+    await channel.track({
+      user_name: 'Alice',
+      online_at: new Date().toISOString()
+    })
+  }
+})
+```
+
+### Get Current Presence State
+
+Retrieve all users currently present:
+
+```typescript
+channel.on('presence', { event: 'sync' }, () => {
+  const state = channel.presenceState()
+  console.log('Online users:', state)
+})
+```
+
+The presence state is an object where keys are user identifiers:
+
+```typescript
+{
+  'user-123': [
+    {
+      user_name: 'Alice',
+      online_at: '2024-03-04T10:30:00Z'
+    }
+  ],
+  'user-456': [
+    {
+      user_name: 'Bob',
+      online_at: '2024-03-04T10:31:00Z'
+    }
+  ]
+}
+```
+
+## Complete Example
+
+Here's a real implementation based on the `nextjs-auth-presence` example in the source:
+
+```typescript
+import { useSupabaseClient, useUser } from '@supabase/auth-helpers-react'
+import { RealtimePresenceState } from '@supabase/supabase-js'
+import { useEffect, useState } from 'react'
+
+export default function OnlineUsers() {
+  const supabaseClient = useSupabaseClient()
+  const user = useUser()
+  const [onlineUsers, setOnlineUsers] = useState<RealtimePresenceState>({})
+
+  useEffect(() => {
+    const channel = supabaseClient.channel('online-users', {
+      config: {
+        presence: {
+          key: user?.email || 'anonymous'
+        }
+      }
+    })
+
+    // Listen for presence changes
+    channel.on('presence', { event: 'sync' }, () => {
+      const presenceState = channel.presenceState()
+      console.log('Presence state updated:', presenceState)
+      setOnlineUsers({ ...presenceState })
+    })
+
+    channel.on('presence', { event: 'join' }, ({ newPresences }) => {
+      console.log('New users joined:', newPresences)
+    })
+
+    channel.on('presence', { event: 'leave' }, ({ leftPresences }) => {
+      console.log('Users left:', leftPresences)
+    })
+
+    // Subscribe and track presence
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        const presenceTrackStatus = await channel.track({
+          user_name: user?.email || 'anonymous',
+          online_at: new Date().toISOString()
+        })
+        console.log('Presence track status:', presenceTrackStatus)
+      }
+    })
+
+    // Cleanup
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [user])
+
+  return (
+    <div>
+      <h2>Currently Online Users:</h2>
+      <ul>
+        {Object.keys(onlineUsers).map((key) => (
+          <li key={key}>{key}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+## Presence Events
+
+Presence emits three types of events:
+
+### Sync Event
+
+Fired when the presence state is synchronized:
+
+```typescript
+channel.on('presence', { event: 'sync' }, () => {
+  const state = channel.presenceState()
+  console.log('Current state:', state)
+})
+```
+
+### Join Event
+
+Fired when new users join:
+
+```typescript
+channel.on('presence', { event: 'join' }, ({ newPresences }) => {
+  console.log('Joined:', newPresences)
+  // newPresences: Array of user presence data
+})
+```
+
+### Leave Event
+
+Fired when users leave or disconnect:
+
+```typescript
+channel.on('presence', { event: 'leave' }, ({ leftPresences }) => {
+  console.log('Left:', leftPresences)
+  // leftPresences: Array of user presence data that left
+})
+```
+
+## Advanced Patterns
+
+### Update Presence State
+
+Update your presence data without reconnecting:
+
+```typescript
+const channel = supabase.channel('game-lobby')
+
+await channel.track({
+  username: 'Alice',
+  status: 'idle'
+})
+
+// Later, update status
+await channel.track({
+  username: 'Alice',
+  status: 'playing',
+  current_level: 5
+})
+```
+
+### Collaborative Editing Example
+
+Track cursor positions and selections in a collaborative editor:
+
+```typescript
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { User, RealtimeChannel } from '@supabase/supabase-js'
+import { useState, useEffect } from 'react'
+
+interface CursorPosition {
+  email: string
+  cursor: { x: number; y: number }
+  selection?: { start: number; end: number }
+  color: string
+}
+
+export default function CollaborativeEditor() {
+  const [users, setUsers] = useState<Set<string>>(new Set())
+  const [channel, setChannel] = useState<RealtimeChannel | null>(null)
+  const supabase = createClientComponentClient()
+
+  useEffect(() => {
+    const docChannel = supabase.channel('document-123', {
+      config: {
+        presence: { key: currentUser.email }
+      }
+    })
+
+    // Track cursor movements
+    docChannel
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        newPresences.forEach(({ email }) => {
+          users.add(email)
+        })
+        setUsers(new Set(users))
+      })
+      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        leftPresences.forEach(({ email }) => {
+          users.delete(email)
+        })
+        setUsers(new Set(users))
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await docChannel.track({
+            email: currentUser.email,
+            cursor: { x: 0, y: 0 },
+            color: getRandomColor()
+          })
+          setChannel(docChannel)
+        }
+      })
+
+    return () => {
+      docChannel.unsubscribe()
+    }
+  }, [])
+
+  function updateCursor(x: number, y: number) {
+    channel?.track({
+      email: currentUser.email,
+      cursor: { x, y },
+      color: userColor
+    })
+  }
+
+  return (
+    <div>
+      <div className="online-users">
+        {Array.from(users).map(email => (
+          <span key={email}>{email}</span>
+        ))}
+      </div>
+      <div
+        className="editor"
+        onMouseMove={(e) => updateCursor(e.clientX, e.clientY)}
+      >
+        {/* Editor content */}
+      </div>
+    </div>
+  )
+}
+```
+
+### Multiplayer Game Lobby
+
+Track players in a game lobby:
+
+```typescript
+interface Player {
+  id: string
+  username: string
+  ready: boolean
+  team?: 'red' | 'blue'
+}
+
+const lobby = supabase.channel('game-lobby-1', {
+  config: {
+    presence: { key: playerId }
+  }
+})
+
+// Join lobby
+lobby.subscribe(async (status) => {
+  if (status === 'SUBSCRIBED') {
+    await lobby.track({
+      username: playerName,
+      ready: false,
+      team: null
+    })
+  }
+})
+
+// Mark as ready
+function setReady(ready: boolean) {
+  lobby.track({
+    username: playerName,
+    ready,
+    team: selectedTeam
+  })
+}
+
+// Check if all players are ready
+lobby.on('presence', { event: 'sync' }, () => {
+  const state = lobby.presenceState()
+  const players = Object.values(state).flat()
+  const allReady = players.every((p: Player) => p.ready)
+
+  if (allReady && players.length >= 2) {
+    startGame()
+  }
+})
+```
+
+## Private Channels with Presence
+
+Combine presence with authorization for private spaces:
+
+```typescript
+const privateRoom = supabase.channel('private-team-room', {
+  config: {
+    private: true, // Requires authorization
+    presence: { key: userId }
+  }
+})
+
+privateRoom
+  .on('presence', { event: 'sync' }, () => {
+    const teamMembers = privateRoom.presenceState()
+    console.log('Team members online:', Object.keys(teamMembers))
+  })
+  .subscribe(async (status, err) => {
+    if (status === 'SUBSCRIBED') {
+      await privateRoom.track({
+        username: currentUser.name,
+        role: currentUser.role
+      })
+    }
+    if (status === 'CHANNEL_ERROR') {
+      console.error('Not authorized:', err)
+    }
+  })
+```
+
+## Combining Presence with Broadcast
+
+Use both features together for rich collaborative experiences:
+
+```typescript
+const channel = supabase.channel('collaboration', {
+  config: {
+    presence: { key: userId },
+    broadcast: { self: true }
+  }
+})
+
+// Track who's online with presence
+channel
+  .on('presence', { event: 'sync' }, () => {
+    const users = channel.presenceState()
+    updateOnlineUsersList(users)
+  })
+  // Send messages with broadcast
+  .on('broadcast', { event: 'message' }, ({ payload }) => {
+    displayMessage(payload)
+  })
+  .subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      // Track presence
+      await channel.track({
+        username: currentUser.name,
+        avatar: currentUser.avatar
+      })
+    }
+  })
+
+// Send a message
+channel.send({
+  type: 'broadcast',
+  event: 'message',
+  payload: { text: 'Hello!', from: userId }
+})
+```
+
+## Performance Considerations
+
+### Throttle Presence Updates
+
+Avoid updating presence too frequently:
+
+```typescript
+import { throttle } from 'lodash'
+
+// Update at most once per second
+const updatePresence = throttle((data) => {
+  channel.track(data)
+}, 1000)
+
+// Use throttled version
+document.addEventListener('mousemove', (e) => {
+  updatePresence({
+    cursor: { x: e.clientX, y: e.clientY }
+  })
+})
+```
+
+### Limit Presence State Size
+
+Keep presence data small for better performance:
+
+```typescript
+// Good: Small, essential data
+await channel.track({
+  username: 'alice',
+  status: 'active'
+})
+
+// Avoid: Large, unnecessary data
+await channel.track({
+  username: 'alice',
+  profilePicture: 'base64...', // Too large!
+  fullHistory: [...] // Unnecessary
+})
+```
+
+### Clean Up on Unmount
+
+Always unsubscribe when components unmount:
+
+```typescript
+useEffect(() => {
+  const channel = supabase.channel('presence')
+  // ... setup
+
+  return () => {
+    channel.unsubscribe() // Important!
+  }
+}, [])
+```
+
+## Troubleshooting
+
+### User Not Appearing in Presence State
+
+1. **Verify subscription status**:
+
+```typescript
+channel.subscribe((status) => {
+  console.log('Status:', status)
+})
+```
+
+2. **Check if track() was called**:
+
+```typescript
+const trackStatus = await channel.track({ username: 'alice' })
+console.log('Track status:', trackStatus)
+```
+
+3. **Ensure unique presence keys**:
+
+```typescript
+// Each user needs a unique key
+const channel = supabase.channel('users', {
+  config: {
+    presence: { key: user.id } // Must be unique!
+  }
+})
+```
+
+### Users Not Being Removed
+
+Presence automatically removes users after 60 seconds of inactivity. If a user appears stuck:
+
+- Check network connectivity
+- Verify the channel is still subscribed
+- Check browser console for errors
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Broadcast" icon="broadcast-tower" href="/realtime/broadcast">
+    Send ephemeral messages between clients
+  </Card>
+  <Card title="Postgres Changes" icon="database" href="/realtime/postgres-changes">
+    Listen to database changes in real-time
+  </Card>
+</CardGroup>

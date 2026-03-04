@@ -1,0 +1,754 @@
+---
+title: 'GraphQL Queries'
+description: 'Advanced querying with GraphQL'
+icon: 'magnifying-glass'
+---
+
+## Overview
+
+GraphQL queries allow you to fetch exactly the data you need from your Supabase database. This guide covers advanced query patterns and techniques.
+
+## Basic Queries
+
+### Select All Rows
+
+Fetch all rows from a table:
+
+```graphql
+query {
+  countriesCollection {
+    edges {
+      node {
+        id
+        name
+        code
+        capital
+        population
+      }
+    }
+  }
+}
+```
+
+### Select Specific Fields
+
+Only request the fields you need:
+
+```graphql
+query {
+  countriesCollection {
+    edges {
+      node {
+        name
+        capital
+      }
+    }
+  }
+}
+```
+
+### Select Single Row
+
+Query a single row by its primary key:
+
+```graphql
+query {
+  countriesCollection(filter: { id: { eq: 1 } }) {
+    edges {
+      node {
+        id
+        name
+        code
+      }
+    }
+  }
+}
+```
+
+## Filtering
+
+### Equality Filters
+
+```graphql
+query {
+  countriesCollection(
+    filter: { name: { eq: "United States" } }
+  ) {
+    edges {
+      node {
+        id
+        name
+        capital
+      }
+    }
+  }
+}
+```
+
+### Comparison Filters
+
+```graphql
+query LargeCountries {
+  countriesCollection(
+    filter: { population: { gt: 100000000 } }
+  ) {
+    edges {
+      node {
+        name
+        population
+      }
+    }
+  }
+}
+```
+
+### Pattern Matching
+
+```graphql
+query SearchCountries {
+  countriesCollection(
+    filter: { name: { ilike: "%united%" } }
+  ) {
+    edges {
+      node {
+        name
+        code
+      }
+    }
+  }
+}
+```
+
+### List Filters
+
+```graphql
+query SpecificCountries {
+  countriesCollection(
+    filter: { code: { in: ["US", "CA", "GB"] } }
+  ) {
+    edges {
+      node {
+        name
+        code
+      }
+    }
+  }
+}
+```
+
+### NULL Filters
+
+```graphql
+query CountriesWithoutCapital {
+  countriesCollection(
+    filter: { capital: { is: NULL } }
+  ) {
+    edges {
+      node {
+        name
+        code
+      }
+    }
+  }
+}
+```
+
+## Complex Filters
+
+### AND Conditions
+
+```graphql
+query {
+  countriesCollection(
+    filter: {
+      and: [
+        { population: { gt: 50000000 } },
+        { name: { like: "A%" } }
+      ]
+    }
+  ) {
+    edges {
+      node {
+        name
+        population
+      }
+    }
+  }
+}
+```
+
+### OR Conditions
+
+```graphql
+query {
+  countriesCollection(
+    filter: {
+      or: [
+        { code: { eq: "US" } },
+        { code: { eq: "CA" } }
+      ]
+    }
+  ) {
+    edges {
+      node {
+        name
+        code
+      }
+    }
+  }
+}
+```
+
+### NOT Conditions
+
+```graphql
+query {
+  countriesCollection(
+    filter: {
+      not: {
+        name: { like: "United%" }
+      }
+    }
+  ) {
+    edges {
+      node {
+        name
+      }
+    }
+  }
+}
+```
+
+### Nested Conditions
+
+```graphql
+query {
+  countriesCollection(
+    filter: {
+      and: [
+        { population: { gt: 10000000 } },
+        {
+          or: [
+            { name: { like: "A%" } },
+            { code: { in: ["US", "CA"] } }
+          ]
+        }
+      ]
+    }
+  ) {
+    edges {
+      node {
+        name
+        population
+        code
+      }
+    }
+  }
+}
+```
+
+## Sorting
+
+### Single Column
+
+```graphql
+query {
+  countriesCollection(
+    orderBy: [{ name: AscNullsLast }]
+  ) {
+    edges {
+      node {
+        name
+        population
+      }
+    }
+  }
+}
+```
+
+### Multiple Columns
+
+```graphql
+query {
+  countriesCollection(
+    orderBy: [
+      { population: DescNullsLast },
+      { name: AscNullsFirst }
+    ]
+  ) {
+    edges {
+      node {
+        name
+        population
+      }
+    }
+  }
+}
+```
+
+### NULL Handling
+
+```graphql
+query {
+  countriesCollection(
+    orderBy: [{ capital: AscNullsFirst }]
+  ) {
+    edges {
+      node {
+        name
+        capital
+      }
+    }
+  }
+}
+```
+
+## Pagination
+
+### Forward Pagination
+
+```graphql
+query FirstPage {
+  countriesCollection(first: 10) {
+    edges {
+      node {
+        id
+        name
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+}
+```
+
+### Next Page
+
+Use the `endCursor` from the previous query:
+
+```graphql
+query NextPage($cursor: Cursor!) {
+  countriesCollection(
+    first: 10,
+    after: $cursor
+  ) {
+    edges {
+      node {
+        id
+        name
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+```
+
+Variables:
+```json
+{
+  "cursor": "WyJuYW1lIiwgIkFsZ2VyaWEiXQ=="
+}
+```
+
+### Backward Pagination
+
+```graphql
+query LastPage {
+  countriesCollection(last: 10) {
+    edges {
+      node {
+        id
+        name
+      }
+      cursor
+    }
+    pageInfo {
+      hasPreviousPage
+      startCursor
+    }
+  }
+}
+```
+
+## Relationships
+
+### One-to-Many
+
+Fetch a country with its cities:
+
+```graphql
+query CountryWithCities {
+  countriesCollection(filter: { code: { eq: "US" } }) {
+    edges {
+      node {
+        name
+        citiesCollection {
+          edges {
+            node {
+              name
+              population
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Many-to-One
+
+Fetch a city with its country:
+
+```graphql
+query CityWithCountry {
+  citiesCollection(filter: { name: { eq: "New York" } }) {
+    edges {
+      node {
+        name
+        population
+        country {
+          name
+          code
+        }
+      }
+    }
+  }
+}
+```
+
+### Many-to-Many
+
+Fetch students with their courses:
+
+```graphql
+query StudentsWithCourses {
+  studentsCollection {
+    edges {
+      node {
+        name
+        enrollmentsCollection {
+          edges {
+            node {
+              course {
+                title
+                credits
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Nested Filtering
+
+Filter parent based on child properties:
+
+```graphql
+query CountriesWithLargeCities {
+  countriesCollection(
+    filter: {
+      citiesCollection: {
+        exists: {
+          filter: { population: { gt: 5000000 } }
+        }
+      }
+    }
+  ) {
+    edges {
+      node {
+        name
+        citiesCollection(
+          filter: { population: { gt: 5000000 } }
+        ) {
+          edges {
+            node {
+              name
+              population
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Aggregations
+
+### Count
+
+Get the total count of records:
+
+```graphql
+query {
+  countriesCollection {
+    edges {
+      node {
+        name
+      }
+    }
+    totalCount
+  }
+}
+```
+
+### Count with Filter
+
+```graphql
+query {
+  countriesCollection(
+    filter: { population: { gt: 100000000 } }
+  ) {
+    totalCount
+  }
+}
+```
+
+## Variables
+
+### Using Variables
+
+```graphql
+query GetCountry($code: String!) {
+  countriesCollection(
+    filter: { code: { eq: $code } }
+  ) {
+    edges {
+      node {
+        id
+        name
+        capital
+        population
+      }
+    }
+  }
+}
+```
+
+Variables:
+```json
+{
+  "code": "US"
+}
+```
+
+### Multiple Variables
+
+```graphql
+query SearchCountries(
+  $minPopulation: BigInt!
+  $searchTerm: String!
+) {
+  countriesCollection(
+    filter: {
+      and: [
+        { population: { gte: $minPopulation } },
+        { name: { ilike: $searchTerm } }
+      ]
+    }
+  ) {
+    edges {
+      node {
+        name
+        population
+      }
+    }
+  }
+}
+```
+
+Variables:
+```json
+{
+  "minPopulation": 10000000,
+  "searchTerm": "%a%"
+}
+```
+
+### Optional Variables
+
+```graphql
+query GetCountries(
+  $limit: Int = 10,
+  $orderDirection: OrderByDirection = AscNullsLast
+) {
+  countriesCollection(
+    first: $limit,
+    orderBy: [{ name: $orderDirection }]
+  ) {
+    edges {
+      node {
+        name
+      }
+    }
+  }
+}
+```
+
+## Aliases
+
+Rename fields in the response:
+
+```graphql
+query {
+  usa: countriesCollection(filter: { code: { eq: "US" } }) {
+    edges {
+      node {
+        countryName: name
+        countryCode: code
+      }
+    }
+  }
+  canada: countriesCollection(filter: { code: { eq: "CA" } }) {
+    edges {
+      node {
+        countryName: name
+        countryCode: code
+      }
+    }
+  }
+}
+```
+
+## Fragments
+
+### Defining Fragments
+
+```graphql
+fragment CountryBasics on Country {
+  id
+  name
+  code
+  capital
+}
+
+fragment CountryDetails on Country {
+  ...CountryBasics
+  population
+  area
+}
+
+query {
+  countriesCollection {
+    edges {
+      node {
+        ...CountryDetails
+      }
+    }
+  }
+}
+```
+
+### Inline Fragments
+
+Use inline fragments for union types:
+
+```graphql
+query {
+  searchResults {
+    ... on Country {
+      name
+      code
+    }
+    ... on City {
+      name
+      population
+    }
+  }
+}
+```
+
+## Directives
+
+### @include
+
+Conditionally include fields:
+
+```graphql
+query GetCountry(
+  $code: String!,
+  $includePopulation: Boolean!
+) {
+  countriesCollection(filter: { code: { eq: $code } }) {
+    edges {
+      node {
+        name
+        population @include(if: $includePopulation)
+      }
+    }
+  }
+}
+```
+
+### @skip
+
+Conditionally exclude fields:
+
+```graphql
+query GetCountry(
+  $code: String!,
+  $skipCapital: Boolean!
+) {
+  countriesCollection(filter: { code: { eq: $code } }) {
+    edges {
+      node {
+        name
+        capital @skip(if: $skipCapital)
+      }
+    }
+  }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use fragments for reusability">
+    Define fragments for commonly used field sets:
+    
+    ```graphql
+    fragment UserFields on User {
+      id
+      email
+      name
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Implement pagination">
+    Always use cursor-based pagination for large datasets.
+  </Accordion>
+  
+  <Accordion title="Request only needed fields">
+    Only query the fields you actually need to minimize payload size.
+  </Accordion>
+  
+  <Accordion title="Use variables for dynamic queries">
+    Never interpolate values directly into query strings - use variables.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Mutations" icon="pen" href="/api/graphql/mutations">
+    Learn how to modify data
+  </Card>
+  
+  <Card title="Client Libraries" icon="code" href="/api/javascript">
+    Use GraphQL with client SDKs
+  </Card>
+</CardGroup>
